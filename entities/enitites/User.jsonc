@@ -1,0 +1,23 @@
+{
+  "properties": {
+    "role": {
+      "type": "string",
+      "description": "The role of the user in the app",
+      "enum": [
+        "admin",
+        "user",
+        "deliverer",
+        "seller"
+      ]
+    },
+    "contact_number": {
+      "type": "string",
+      "description": "Phone contact number"
+    }
+  },
+  "required": [
+    "role"
+  ],
+  "name": "User",
+  "type": "object"
+}

@@ -1,0 +1,32 @@
+{
+  "name": "Promotion",
+  "type": "object",
+  "properties": {
+    "product_id": {
+      "type": "string"
+    },
+    "product_name": {
+      "type": "string"
+    },
+    "original_price": {
+      "type": "number",
+      "default": 0
+    },
+    "promotional_price": {
+      "type": "number",
+      "default": 0
+    },
+    "image_url": {
+      "type": "string"
+    },
+    "active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "product_id",
+    "product_name",
+    "promotional_price"
+  ]
+}

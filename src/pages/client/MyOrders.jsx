@@ -1,0 +1,145 @@
+import React, { useEffect, useState } from 'react';
+import { base44 } from '@/api/supabaseClient';
+import { formatBRL, formatDate } from '@/lib/format';
+import StatusBadge from '@/components/StatusBadge';
+import AuthModal from '@/components/AuthModal';
+import { Button } from '@/components/ui/button';
+import { ClipboardList, Package, LogIn, ChevronDown, ChevronUp } from 'lucide-react';
+
+export default function MyOrders() {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null);
+  const [showAuth, setShowAuth] = useState(false);
+  const [expanded, setExpanded] = useState(null);
+
+  const load = async () => {
+    try {
+      const u = await base44.auth.me();
+      setUser(u);
+      const myOrders = await base44.entities.Order.filter({ created_by_id: u.id }, '-created_date');
+      setOrders(myOrders);
+    } catch {
+      setUser(null);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    load();
+    const unsub = base44.entities.Order.subscribe(() => load());
+    return () => { if (unsub) unsub(); };
+  }, []);
+
+  if (loading) {
+    return <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="max-w-md mx-auto text-center py-16">
+        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <LogIn className="w-8 h-8 text-slate-400" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900 mb-2">Faça login para ver seus pedidos</h2>
+        <p className="text-sm text-slate-500 mb-4">Acompanhe o status dos seus pedidos aqui</p>
+        <Button onClick={() => setShowAuth(true)} className="bg-emerald-600 hover:bg-emerald-700">Entrar / Cadastrar</Button>
+        <AuthModal open={showAuth} onClose={() => setShowAuth(false)} onSuccess={() => window.location.reload()} />
+      </div>
+    );
+  }
+
+  const active = orders.filter(o => o.status !== 'Finalizado');
+  const finalized = orders.filter(o => o.status === 'Finalizado');
+
+  const renderOrder = (order) => {
+    const isExpanded = expanded === order.id;
+    return (
+      <div key={order.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-3">
+        <button
+          onClick={() => setExpanded(isExpanded ? null : order.id)}
+          className="w-full p-4 flex items-center gap-4 hover:bg-slate-50 transition-colors text-left"
+        >
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+            <Package className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-slate-900 truncate">{order.invoice_number || `Pedido #${order.id?.slice(-6).toUpperCase()}`}</p>
+            <p className="text-xs text-slate-500">{formatDate(order.created_date)} • {(order.items || []).length} itens</p>
+          </div>
+          <StatusBadge status={order.status} />
+          <p className="font-bold text-slate-900 hidden sm:block">{formatBRL(order.total)}</p>
+          {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+        </button>
+        {isExpanded && (
+          <div className="border-t border-slate-100 p-4 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div><p className="text-slate-400 text-xs">Endereço</p><p className="text-slate-700">{order.delivery_address}</p></div>
+              <div><p className="text-slate-400 text-xs">Pagamento</p><p className="text-slate-700">{order.payment_method}</p></div>
+              {order.observations && <div className="sm:col-span-2"><p className="text-slate-400 text-xs">Observações</p><p className="text-slate-700">{order.observations}</p></div>}
+            </div>
+            <div className="rounded-lg border border-slate-100 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-xs text-slate-400 text-left">
+                  <tr>
+                    <th className="px-3 py-2">Produto</th>
+                    <th className="px-3 py-2 text-center">Qtd</th>
+                    <th className="px-3 py-2 text-right">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(order.items || []).map((item, i) => (
+                    <tr key={i} className="border-t border-slate-50">
+                      <td className="px-3 py-2">{item.product_name}{item.variant_name ? ` - ${item.variant_name}` : ''}</td>
+                      <td className="px-3 py-2 text-center">{item.quantity}</td>
+                      <td className="px-3 py-2 text-right">{formatBRL((item.price || 0) * item.quantity)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+              <span className="text-sm text-slate-500">Total</span>
+              <span className="text-lg font-bold text-emerald-600">{formatBRL(order.total)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <h1 className="text-2xl font-bold text-slate-900 mb-6">Meus Pedidos</h1>
+
+      {orders.length === 0 ? (
+        <div className="text-center py-16 text-slate-400 bg-white rounded-xl border border-slate-200">
+          <ClipboardList className="w-12 h-12 mx-auto mb-3" />
+          <p className="font-medium">Você ainda não fez nenhum pedido</p>
+          <p className="text-sm mt-1">Navegue pelo catálogo e faça seu primeiro pedido</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {active.length > 0 && (
+            <div>
+              <h2 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+                Em Andamento ({active.length})
+              </h2>
+              {active.map(renderOrder)}
+            </div>
+          )}
+          {finalized.length > 0 && (
+            <div>
+              <h2 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                Finalizados ({finalized.length})
+              </h2>
+              {finalized.map(renderOrder)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

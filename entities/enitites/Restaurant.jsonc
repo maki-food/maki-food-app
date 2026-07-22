@@ -1,0 +1,42 @@
+{
+  "name": "Restaurant",
+  "type": "object",
+  "properties": {
+    "restaurant_name": {
+      "type": "string"
+    },
+    "cnpj": {
+      "type": "string"
+    },
+    "contact_number": {
+      "type": "string"
+    },
+    "street": {
+      "type": "string"
+    },
+    "neighborhood": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    },
+    "zip_code": {
+      "type": "string"
+    },
+    "address": {
+      "type": "string"
+    },
+    "account_name": {
+      "type": "string"
+    },
+    "user_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "restaurant_name"
+  ]
+}

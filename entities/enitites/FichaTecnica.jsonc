@@ -1,0 +1,51 @@
+{
+  "name": "FichaTecnica",
+  "type": "object",
+  "properties": {
+    "product_name": {
+      "type": "string"
+    },
+    "product_id": {
+      "type": "string"
+    },
+    "supplier_transport": {
+      "type": "number",
+      "default": 0
+    },
+    "packaging": {
+      "type": "number",
+      "default": 0
+    },
+    "fuel": {
+      "type": "number",
+      "default": 0
+    },
+    "other_costs": {
+      "type": "number",
+      "default": 0
+    },
+    "purchase_cost": {
+      "type": "number",
+      "default": 0
+    },
+    "selling_price": {
+      "type": "number",
+      "default": 0
+    },
+    "profit_margin_pct": {
+      "type": "number",
+      "default": 0
+    },
+    "tax_fee_pct": {
+      "type": "number",
+      "default": 0
+    },
+    "final_price": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "product_name"
+  ]
+}

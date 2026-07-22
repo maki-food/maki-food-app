@@ -1,0 +1,84 @@
+{
+  "name": "Product",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "image_url": {
+      "type": "string"
+    },
+    "price": {
+      "type": "number"
+    },
+    "stock_quantity": {
+      "type": "number",
+      "default": 0
+    },
+    "min_stock": {
+      "type": "number",
+      "default": 10
+    },
+    "barcode": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string"
+    },
+    "unit": {
+      "type": "string",
+      "default": "un"
+    },
+    "sku": {
+      "type": "string"
+    },
+    "purchase_cost": {
+      "type": "number",
+      "default": 0
+    },
+    "unit_value": {
+      "type": "number",
+      "default": 0
+    },
+    "estimated_freight": {
+      "type": "number",
+      "default": 0
+    },
+    "sales_channels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "is_promotion": {
+      "type": "boolean",
+      "default": false
+    },
+    "profit_margin_pct": {
+      "type": "number",
+      "default": 0
+    },
+    "tax_fee_pct": {
+      "type": "number",
+      "default": 0
+    },
+    "expiration_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "is_raw_material": {
+      "type": "boolean",
+      "default": false
+    },
+    "parent_product_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "price"
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "name": "Purchase",
+  "type": "object",
+  "properties": {
+    "supplier_name": {
+      "type": "string"
+    },
+    "invoice_number": {
+      "type": "string"
+    },
+    "products": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "product_name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "price": {
+            "type": "number"
+          },
+          "box_weight": {
+            "type": "number"
+          },
+          "box_count": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "total": {
+      "type": "number",
+      "default": 0
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "invoice_photo_url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "supplier_name",
+    "invoice_number"
+  ]
+}

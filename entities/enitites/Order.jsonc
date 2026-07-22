@@ -1,0 +1,88 @@
+{
+  "name": "Order",
+  "type": "object",
+  "properties": {
+    "restaurant_name": {
+      "type": "string"
+    },
+    "restaurant_cnpj": {
+      "type": "string"
+    },
+    "invoice_number": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Pedido Emitido",
+        "Saiu para Entrega",
+        "Finalizado"
+      ],
+      "default": "Pedido Emitido"
+    },
+    "delivery_address": {
+      "type": "string"
+    },
+    "payment_method": {
+      "type": "string"
+    },
+    "contact_info": {
+      "type": "string"
+    },
+    "observations": {
+      "type": "string"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "product_name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "barcode": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "total": {
+      "type": "number",
+      "default": 0
+    },
+    "shipping_fee": {
+      "type": "number",
+      "default": 0
+    },
+    "deliverer_id": {
+      "type": "string"
+    },
+    "deliverer_name": {
+      "type": "string"
+    },
+    "delivery_photo_url": {
+      "type": "string"
+    },
+    "delivery_status": {
+      "type": "string",
+      "enum": [
+        "Pendente",
+        "Aceito",
+        "Saiu para Entrega",
+        "Finalizado"
+      ],
+      "default": "Pendente"
+    }
+  },
+  "required": [
+    "restaurant_name",
+    "delivery_address",
+    "payment_method"
+  ]
+}

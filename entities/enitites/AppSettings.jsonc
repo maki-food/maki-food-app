@@ -1,0 +1,80 @@
+{
+  "name": "AppSettings",
+  "type": "object",
+  "properties": {
+    "app_name": {
+      "type": "string",
+      "default": "SushiPro"
+    },
+    "logo_url": {
+      "type": "string"
+    },
+    "hero_image_url": {
+      "type": "string"
+    },
+    "banners": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "banner_interval": {
+      "type": "number",
+      "default": 5
+    },
+    "sidebar_bg": {
+      "type": "string",
+      "default": "#0f172a"
+    },
+    "primary_color": {
+      "type": "string",
+      "default": "#059669"
+    },
+    "page_bg": {
+      "type": "string",
+      "default": "#f8fafc"
+    },
+    "topbar_bg": {
+      "type": "string",
+      "default": "#ffffff"
+    },
+    "category_bar_bg": {
+      "type": "string",
+      "default": "#f8fafc"
+    },
+    "admin_text_color": {
+      "type": "string",
+      "default": "#ffffff"
+    },
+    "store_text_color": {
+      "type": "string",
+      "default": "#475569"
+    },
+    "expiration_threshold_days": {
+      "type": "number",
+      "default": 7
+    },
+    "payment_methods": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [
+        "Pix",
+        "Dinheiro"
+      ]
+    },
+    "shipping_fee": {
+      "type": "number",
+      "default": 20
+    },
+    "free_shipping_threshold": {
+      "type": "number",
+      "default": 200
+    }
+  },
+  "required": [
+    "app_name"
+  ]
+}
