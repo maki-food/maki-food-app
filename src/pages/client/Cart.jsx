@@ -327,7 +327,7 @@ export default function Cart() {
                     <span className="text-xl font-bold text-emerald-600">{formatBRL(grandTotal)}</span>
                   </div>
                   <Button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-700 mt-2">
-                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Enviar Pedido'}
+                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confira'}
                   </Button>
                 </div>
               </form>
@@ -361,7 +361,7 @@ export default function Cart() {
           </div>
           <h3 className="font-bold text-slate-900 text-lg">Custo estimado</h3>
           <p className="text-sm text-slate-500">
-            Para produtos vendidos por peso, o valor cobrado será ajustado à quantidade servida. A cobrança do valor final será feita após a preparação do seu pedido.
+            Para produtos vendidos por peso, o valor cobrado será ajustado à quantidade servida. O valor final será cobrado após a preparação do seu pedido.
           </p>
           <Button onClick={() => setShowCostInfo(false)} className="w-full bg-emerald-600 hover:bg-emerald-700 mt-2">
             Entendido

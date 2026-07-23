@@ -11,6 +11,7 @@ export default function ProductCard({ product, promoPrice, variants = [] }) {
   const { items, addItem, updateQuantity, removeItem } = useCart();
   const [variantId, setVariantId] = useState(variants[0]?.id || '');
   const [detailOpen, setDetailOpen] = useState(false);
+  const [zoomOpen, setZoomOpen] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteId, setFavoriteId] = useState(null);
 
@@ -170,17 +171,69 @@ export default function ProductCard({ product, promoPrice, variants = [] }) {
           <DialogHeader>
             <DialogTitle>{product.name}</DialogTitle>
           </DialogHeader>
-          <div className="aspect-square bg-slate-100 rounded-xl overflow-hidden flex items-center justify-center">
+          <button
+            type="button"
+            onClick={() => setZoomOpen(true)}
+            className="aspect-square bg-slate-100 rounded-xl overflow-hidden flex items-center justify-center w-full cursor-zoom-in"
+          >
             {product.image_url ? (
               <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
             ) : (
               <Package className="w-16 h-16 text-slate-300" />
             )}
-          </div>
+          </button>
           {product.description && (
             <p className="text-sm text-slate-600 whitespace-pre-wrap">{product.description}</p>
           )}
           <p className="text-xl font-bold text-emerald-600">{formatBRL(displayPrice)}{!hasVariants && <span className="text-sm text-slate-400 font-normal"> / {product.unit || 'un'}</span>}</p>
+
+          {hasVariants && (
+            <Select value={variantId} onValueChange={setVariantId}>
+              <SelectTrigger className="h-10 text-sm"><SelectValue placeholder="Escolha uma opção" /></SelectTrigger>
+              <SelectContent>
+                {variants.map(v => <SelectItem key={v.id} value={v.id}>{v.name} — {formatBRL(v.price)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+
+          <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={toggleFavorite}
+              className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-sm font-medium border border-slate-200 hover:bg-slate-50 flex-shrink-0"
+            >
+              <Heart className={`w-4 h-4 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-slate-400'}`} />
+              Salvar na lista
+            </button>
+
+            {unavailable ? (
+              <span className="flex-1 text-sm font-medium text-slate-400 px-3 py-2.5 text-center bg-slate-50 rounded-lg">
+                {isPaused ? 'Indisponível no momento' : 'Indisponível'}
+              </span>
+            ) : cartQty > 0 ? (
+              <div className="flex-1 flex items-center justify-between gap-2 bg-slate-900 rounded-lg px-1 py-1">
+                <button type="button" onClick={handleDecrease} className="w-9 h-9 rounded-md flex items-center justify-center text-white hover:bg-white/10">
+                  {cartQty <= step ? <Trash2 className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
+                </button>
+                <span className="text-white font-semibold text-sm">{cartQty} unit{cartQty === 1 ? '' : 's'}</span>
+                <button type="button" onClick={handleIncrease} disabled={cartQty + step > maxAvailable} className="w-9 h-9 rounded-md flex items-center justify-center text-white hover:bg-white/10 disabled:opacity-30">
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <Button onClick={handleAdd} disabled={hasVariants && !selectedVariant} className="flex-1 bg-slate-900 hover:bg-slate-800">
+                Adicionar
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={zoomOpen} onOpenChange={setZoomOpen}>
+        <DialogContent className="sm:max-w-lg p-0 bg-transparent border-none shadow-none">
+          {product.image_url && (
+            <img src={product.image_url} alt={product.name} className="w-full h-full object-contain rounded-xl" />
+          )}
         </DialogContent>
       </Dialog>
     </>
