@@ -217,9 +217,13 @@ const auth = {
   // preciso setar o token manualmente. Mantido só para compatibilidade.
   setToken() {},
 
-  async resetPasswordRequest(email) {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+ async resetPasswordRequest(email) {
+    // Trocamos para enviar o OTP por código em vez de link de redirecionamento
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email,
+      options: {
+        shouldCreateUser: false, // Garante que só envia se a conta já existir
+      },
     });
     throwIfError(error);
   },
