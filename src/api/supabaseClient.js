@@ -36,6 +36,7 @@ const TABLES = {
   AppSettings: 'app_settings',
   User: 'profiles',
   ProductBatch: 'product_batches',
+  Favorite: 'favorites',
   VariantType: 'variant_types',
   ProductVariant: 'product_variants',
 };
@@ -147,11 +148,25 @@ async function me() {
   throwIfError(error);
   if (!user) throw new Error('Not authenticated');
 
-  const { data: profile } = await supabase
+  let { data: profile } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', user.id)
     .single();
+
+  if (!profile) {
+    const { data: created } = await supabase
+      .from('profiles')
+      .insert({
+        id: user.id,
+        email: user.email,
+        full_name: user.user_metadata?.full_name || user.user_metadata?.name || '',
+        role: 'user',
+      })
+      .select()
+      .single();
+    profile = created;
+  }
 
   return {
     id: user.id,

@@ -4,7 +4,6 @@ import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
-import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
 import Home from '@/pages/Home';
 import Login from '@/pages/Login';
@@ -28,13 +27,17 @@ import Promotions from '@/pages/admin/Promotions';
 import ClientProducts from '@/pages/client/ClientProducts';
 import Cart from '@/pages/client/Cart';
 import MyOrders from '@/pages/client/MyOrders';
+import ClientCategories from '@/pages/client/Categories';
+import SearchView from '@/pages/client/SearchView';
+import Lists from '@/pages/client/Lists';
+import Account from '@/pages/client/Account';
+import CatalogView from '@/pages/client/CatalogView';
 import { CartProvider } from '@/context/CartContext';
 import { SettingsProvider } from '@/context/SettingsContext';
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+  const { isLoadingAuth, isLoadingPublicSettings } = useAuth();
 
-  // Show loading spinner while checking app public settings or auth
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
@@ -43,15 +46,6 @@ const AuthenticatedApp = () => {
     );
   }
 
-  // Handle authentication errors
-  if (authError) {
-    if (authError.type === 'user_not_registered') {
-      return <UserNotRegisteredError />;
-    }
-    // Don't redirect for auth_required - allow public browsing of the store
-  }
-
-  // Render the main app
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
@@ -75,6 +69,11 @@ const AuthenticatedApp = () => {
       </Route>
       <Route element={<ClientLayout />}>
         <Route path="/loja" element={<ClientProducts />} />
+        <Route path="/loja/produtos" element={<CatalogView />} />
+        <Route path="/loja/categorias" element={<ClientCategories />} />
+        <Route path="/loja/buscar" element={<SearchView />} />
+        <Route path="/loja/listas" element={<Lists />} />
+        <Route path="/loja/conta" element={<Account />} />
         <Route path="/loja/carrinho" element={<Cart />} />
         <Route path="/loja/pedidos" element={<MyOrders />} />
       </Route>

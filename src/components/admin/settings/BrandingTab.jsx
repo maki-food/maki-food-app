@@ -17,7 +17,7 @@ const ColorField = ({ label, value, onChange }) => (
 
 export default function BrandingTab() {
   const { settings, refresh } = useSettings();
-  const [form, setForm] = useState({ app_name: 'SushiPro', logo_url: '', hero_image_url: '', banners: [], banner_interval: 5, sidebar_bg: '#0f172a', primary_color: '#059669', page_bg: '#f8fafc', topbar_bg: '#ffffff', category_bar_bg: '#f8fafc', admin_text_color: '#ffffff', store_text_color: '#475569', expiration_threshold_days: 7 });
+  const [form, setForm] = useState({ app_name: 'SushiPro', logo_url: '', hero_image_url: '', banners: [], banner_interval: 5, whatsapp_number: '', sidebar_bg: '#0f172a', primary_color: '#059669', page_bg: '#f8fafc', topbar_bg: '#ffffff', category_bar_bg: '#f8fafc', admin_text_color: '#ffffff', store_text_color: '#475569', expiration_threshold_days: 7 });
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -29,6 +29,7 @@ export default function BrandingTab() {
         hero_image_url: settings.hero_image_url || '',
         banners: settings.banners || [],
         banner_interval: settings.banner_interval || 5,
+        whatsapp_number: settings.whatsapp_number || '',
         sidebar_bg: settings.sidebar_bg || '#0f172a',
         primary_color: settings.primary_color || '#059669',
         page_bg: settings.page_bg || '#f8fafc',
@@ -120,6 +121,11 @@ export default function BrandingTab() {
           <Label>Nome do App</Label>
           <Input value={form.app_name} onChange={e => setForm({ ...form, app_name: e.target.value })} className="mt-1" placeholder="SushiPro" />
           <p className="text-xs text-slate-400 mt-1">Este nome aparece na barra lateral, no cabeçalho da loja e no título do navegador</p>
+        </div>
+        <div>
+          <Label>WhatsApp de Atendimento</Label>
+          <Input value={form.whatsapp_number} onChange={e => setForm({ ...form, whatsapp_number: e.target.value })} className="mt-1" placeholder="55119999999999 (com DDI e DDD, só números)" />
+          <p className="text-xs text-slate-400 mt-1">Usado no botão "Falar com Atendente" e "Ajuda" na loja do cliente</p>
         </div>
         <div className="mt-4">
           <Label>Dias para Alerta de Validade</Label>
