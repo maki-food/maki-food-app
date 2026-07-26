@@ -37,6 +37,9 @@ const TABLES = {
   User: 'profiles',
   ProductBatch: 'product_batches',
   Favorite: 'favorites',
+  Address: 'addresses',
+  List: 'lists',
+  ListItem: 'list_items',
   VariantType: 'variant_types',
   ProductVariant: 'product_variants',
 };
@@ -217,19 +220,16 @@ const auth = {
   // preciso setar o token manualmente. Mantido só para compatibilidade.
   setToken() {},
 
- async resetPasswordRequest(email) {
-    // Trocamos para enviar o OTP por código em vez de link de redirecionamento
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email,
-      options: {
-        shouldCreateUser: false, // Garante que só envia se a conta já existir
-      },
+  async resetPasswordRequest(email) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
     });
     throwIfError(error);
   },
 
   // Requer que o template de e-mail "Reset Password" no Supabase aponte para
-  // /reset-password?token={{ .TokenHash }}&type=recovery (ver instruções)
+  // /reset-password?token={{ .TokenHash }}&type=recovery (ver instruções) —
+  // mantido por compatibilidade com o fluxo antigo por link
   async resetPassword({ resetToken, newPassword }) {
     const { error: verifyError } = await supabase.auth.verifyOtp({
       token_hash: resetToken,
@@ -238,6 +238,43 @@ const auth = {
     throwIfError(verifyError);
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     throwIfError(error);
+  },
+
+  // Fluxo novo: usado depois que o código de 8 dígitos já foi validado
+  // (verifyRecoveryOtp), então a sessão de recuperação já está ativa
+  async setNewPassword(newPassword) {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    throwIfError(error);
+  },
+
+  // Cria um funcionário já confirmado (sem e-mail de verificação) — só admin pode chamar
+  async adminCreateStaff({ email, password, fullName, role, contactNumber }) {
+    const { data, error } = await supabase.rpc('admin_create_staff', {
+      p_email: email,
+      p_password: password,
+      p_full_name: fullName,
+      p_role: role,
+      p_contact_number: contactNumber || null,
+    });
+    throwIfError(error);
+    return data;
+  },
+
+  // Atualiza e-mail e/ou senha de um funcionário já existente — só admin pode chamar
+  async adminUpdateStaffCredentials({ userId, newEmail, newPassword }) {
+    const { error } = await supabase.rpc('admin_update_staff_credentials', {
+      p_user_id: userId,
+      p_new_email: newEmail || null,
+      p_new_password: newPassword || null,
+    });
+    throwIfError(error);
+  },
+
+  // Fluxo de "esqueci a senha" por código digitado (não por link de e-mail)
+  async verifyRecoveryOtp({ email, code }) {
+    const { data, error } = await supabase.auth.verifyOtp({ email, token: code, type: 'recovery' });
+    throwIfError(error);
+    return data;
   },
 
   redirectToLogin() {

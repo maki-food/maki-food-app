@@ -10,11 +10,13 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AuthModal from '@/components/AuthModal';
+import ProfileEditDialog from '@/components/client/ProfileEditDialog';
 import QuantitySelector from '@/components/QuantitySelector';
 import { Trash2, ShoppingBag, Loader2, CheckCircle, Store, MapPin, CreditCard, Package, Truck, X, MoreVertical, Info, Scale } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logAction } from '@/lib/audit';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { toast } from '@/components/ui/use-toast';
 
 export default function Cart() {
   const { items, removeItem, updateQuantity, total, clearCart } = useCart();
@@ -33,9 +35,14 @@ export default function Cart() {
     street: '', neighborhood: '', city: '', state: '', zip_code: '',
   });
   const [checkoutForm, setCheckoutForm] = useState({ delivery_address: '', payment_method: '', observations: '' });
+  const [addresses, setAddresses] = useState([]);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [showCostInfo, setShowCostInfo] = useState(false);
+  const [saveListOpen, setSaveListOpen] = useState(false);
+  const [newListName, setNewListName] = useState('');
+  const [savingList, setSavingList] = useState(false);
   const navigate = useNavigate();
 
   const shippingFee = total >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
@@ -56,6 +63,8 @@ export default function Cart() {
         const fullAddr = [r.street, r.neighborhood, r.city, r.state, r.zip_code].filter(Boolean).join(', ');
         setCheckoutForm(prev => ({ ...prev, delivery_address: fullAddr || r.address || '' }));
       }
+      const extraAddrs = await base44.entities.Address.filter({ user_id: u.id }).catch(() => []);
+      setAddresses(extraAddrs || []);
     } catch {}
     setLoading(false);
   };
@@ -128,17 +137,32 @@ export default function Cart() {
     setMenuOpen(false);
   };
 
-  const handleSaveToList = async () => {
+  const handleOpenSaveList = async () => {
     setMenuOpen(false);
     try {
-      const u = await base44.auth.me();
-      for (const item of items) {
-        await base44.entities.Favorite.create({ user_id: u.id, product_id: item.product_id }).catch(() => {});
-      }
-      navigate('/loja/listas');
+      await base44.auth.me();
+      setNewListName(`Lista de ${new Date().toLocaleDateString('pt-BR')}`);
+      setSaveListOpen(true);
     } catch {
       navigate('/login');
     }
+  };
+
+  const handleConfirmSaveList = async () => {
+    if (!newListName.trim()) return;
+    setSavingList(true);
+    try {
+      const u = await base44.auth.me();
+      const list = await base44.entities.List.create({ user_id: u.id, name: newListName.trim() });
+      for (const item of items) {
+        await base44.entities.ListItem.create({ list_id: list.id, product_id: item.product_id, quantity: item.quantity }).catch(() => {});
+      }
+      setSaveListOpen(false);
+      navigate('/loja/listas');
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Erro ao salvar lista', description: err.message });
+    }
+    setSavingList(false);
   };
 
   if (loading) {
@@ -186,7 +210,7 @@ export default function Cart() {
             <>
               <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
               <div className="absolute right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 min-w-[180px] overflow-hidden">
-                <button onClick={handleSaveToList} className="w-full text-left px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50">
+                <button onClick={handleOpenSaveList} className="w-full text-left px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50">
                   Salvar na lista
                 </button>
                 <button onClick={() => { setConfirmClear(true); setMenuOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 border-t border-slate-100">
@@ -239,53 +263,41 @@ export default function Cart() {
               </div>
             </div>
           ) : !restaurant ? (
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="bg-white rounded-xl border border-slate-200 p-5 text-center">
+              <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Store className="w-6 h-6 text-amber-600" />
+              </div>
               <h3 className="font-semibold text-slate-900 mb-1">Complete seu cadastro</h3>
-              <p className="text-sm text-slate-500 mb-4">Precisamos dos dados do seu restaurante</p>
-              <form onSubmit={saveProfile} className="space-y-3">
-                <div>
-                  <Label>Nome do Restaurante *</Label>
-                  <Input required value={profileForm.restaurant_name} onChange={e => setProfileForm({ ...profileForm, restaurant_name: e.target.value })} className="mt-1" />
-                </div>
-                <div>
-                  <Label>CNPJ</Label>
-                  <Input value={profileForm.cnpj} onChange={e => setProfileForm({ ...profileForm, cnpj: maskCNPJ(e.target.value) })} className="mt-1" placeholder="00.000.000/0000-00" />
-                </div>
-                <div>
-                  <Label>Telefone / Contato *</Label>
-                  <Input required value={profileForm.contact_number} onChange={e => setProfileForm({ ...profileForm, contact_number: maskPhone(e.target.value) })} className="mt-1" placeholder="(11) 99999-9999" />
-                </div>
-                <div>
-                  <Label>CEP *</Label>
-                  <Input required value={profileForm.zip_code} onChange={e => setProfileForm({ ...profileForm, zip_code: maskCEP(e.target.value) })} className="mt-1" placeholder="00000-000" />
-                </div>
-                <div>
-                  <Label>Rua *</Label>
-                  <Input required value={profileForm.street} onChange={e => setProfileForm({ ...profileForm, street: e.target.value })} className="mt-1" placeholder="Rua / Avenida" />
-                </div>
-                <div>
-                  <Label>Bairro *</Label>
-                  <Input required value={profileForm.neighborhood} onChange={e => setProfileForm({ ...profileForm, neighborhood: e.target.value })} className="mt-1" />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <Label>Cidade *</Label>
-                    <Input required value={profileForm.city} onChange={e => setProfileForm({ ...profileForm, city: e.target.value })} className="mt-1" />
-                  </div>
-                  <div>
-                    <Label>Estado *</Label>
-                    <Input required value={profileForm.state} onChange={e => setProfileForm({ ...profileForm, state: e.target.value.toUpperCase().slice(0, 2) })} className="mt-1" placeholder="SP" />
-                  </div>
-                </div>
-                <Button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-700">
-                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar dados'}
-                </Button>
-              </form>
+              <p className="text-sm text-slate-500 mb-4">Antes de concluir o pedido, precisamos dos dados do seu restaurante e do endereço de entrega.</p>
+              <Button onClick={() => setProfileDialogOpen(true)} className="w-full bg-emerald-600 hover:bg-emerald-700">
+                Preencher
+              </Button>
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 p-5 sticky top-20">
               <h3 className="font-semibold text-slate-900 mb-4">Finalizar Pedido</h3>
               <form onSubmit={handleCheckout} className="space-y-3">
+                {addresses.length > 0 && (
+                  <div>
+                    <Label><MapPin className="w-3.5 h-3.5 inline mr-1" />Qual endereço?</Label>
+                    <Select
+                      value={checkoutForm.delivery_address}
+                      onValueChange={v => setCheckoutForm({ ...checkoutForm, delivery_address: v })}
+                    >
+                      <SelectTrigger className="mt-1"><SelectValue placeholder="Selecione o endereço" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={[restaurant.street, restaurant.neighborhood, restaurant.city, restaurant.state, restaurant.zip_code].filter(Boolean).join(', ') || restaurant.address}>
+                          Endereço 1 — {restaurant.street || restaurant.address}
+                        </SelectItem>
+                        {addresses.map(a => (
+                          <SelectItem key={a.id} value={[a.street, a.neighborhood, a.city, a.state, a.zip_code].filter(Boolean).join(', ')}>
+                            {a.label || 'Endereço 2'} — {a.street}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div>
                   <Label><MapPin className="w-3.5 h-3.5 inline mr-1" />Endereço de Entrega *</Label>
                   <Textarea required value={checkoutForm.delivery_address} onChange={e => setCheckoutForm({ ...checkoutForm, delivery_address: e.target.value })} className="mt-1" rows={2} />
@@ -341,6 +353,29 @@ export default function Cart() {
         onClose={() => setShowAuth(false)}
         onSuccess={() => window.location.reload()}
       />
+
+      <ProfileEditDialog
+        open={profileDialogOpen}
+        onClose={() => setProfileDialogOpen(false)}
+        user={user}
+        onSaved={checkUser}
+      />
+
+      <Dialog open={saveListOpen} onOpenChange={setSaveListOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Salvar na lista</DialogTitle>
+          </DialogHeader>
+          <Label>Nome da lista</Label>
+          <Input autoFocus value={newListName} onChange={e => setNewListName(e.target.value)} className="mt-1" placeholder="Ex: Compra de sempre" />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveListOpen(false)}>Cancelar</Button>
+            <Button onClick={handleConfirmSaveList} disabled={savingList || !newListName.trim()} className="bg-emerald-600 hover:bg-emerald-700">
+              {savingList ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmClear} onOpenChange={setConfirmClear}>
         <DialogContent className="sm:max-w-sm">

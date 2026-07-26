@@ -41,19 +41,13 @@ export default function StaffTab() {
     setRegistering(true);
     setRegError('');
     try {
-      await base44.auth.register({ email: regForm.email, password: regForm.password });
-      try {
-        const allUsers = await base44.entities.User.list();
-        const newUser = allUsers.find(u => u.email === regForm.email);
-        if (newUser) {
-          await base44.entities.User.update(newUser.id, {
-            is_verified: true,
-            full_name: regForm.full_name,
-            role: regForm.role,
-            contact_number: regForm.contact_number,
-          });
-        }
-      } catch {}
+      await base44.auth.adminCreateStaff({
+        email: regForm.email,
+        password: regForm.password,
+        fullName: regForm.full_name,
+        role: regForm.role,
+        contactNumber: regForm.contact_number,
+      });
       await logAction('Funcionário Cadastrado', `${regForm.full_name || regForm.email} - ${roleConfig[regForm.role]?.label || regForm.role}`);
       setRegisterOpen(false);
       setRegForm({ full_name: '', email: '', password: '', contact_number: '', role: 'seller' });
@@ -71,6 +65,7 @@ export default function StaffTab() {
       email: u.email || '',
       contact_number: u.contact_number || '',
       role: u.role || 'user',
+      new_password: '',
     });
     setEditError('');
   };
@@ -83,8 +78,14 @@ export default function StaffTab() {
         full_name: editForm.full_name,
         contact_number: editForm.contact_number,
         role: editForm.role,
-        is_verified: true,
       });
+      if (editForm.email !== editingUser.email || editForm.new_password) {
+        await base44.auth.adminUpdateStaffCredentials({
+          userId: editingUser.id,
+          newEmail: editForm.email !== editingUser.email ? editForm.email : null,
+          newPassword: editForm.new_password || null,
+        });
+      }
       await logAction('Funcionário Editado', `${editForm.full_name || editForm.email}: ${roleConfig[editForm.role]?.label || editForm.role}`);
       setEditingUser(null);
       load();
@@ -215,12 +216,15 @@ export default function StaffTab() {
             </div>
             <div>
               <Label>Email</Label>
-              <Input type="email" value={editForm.email} disabled className="mt-1 bg-slate-50 text-slate-400" />
-              <p className="text-xs text-slate-400 mt-1">O email não pode ser alterado</p>
+              <Input type="email" required value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} className="mt-1" placeholder="funcionario@email.com" />
             </div>
             <div>
               <Label>Telefone / Contato</Label>
               <Input value={editForm.contact_number} onChange={e => setEditForm({ ...editForm, contact_number: maskPhone(e.target.value) })} className="mt-1" placeholder="(11) 99999-9999" />
+            </div>
+            <div>
+              <Label>Nova Senha (opcional)</Label>
+              <Input type="password" value={editForm.new_password} onChange={e => setEditForm({ ...editForm, new_password: e.target.value })} className="mt-1" placeholder="Deixe em branco pra manter a atual" minLength={6} />
             </div>
             <div>
               <Label>Função *</Label>

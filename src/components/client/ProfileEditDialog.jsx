@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 
 const emptyForm = {
@@ -14,18 +14,27 @@ const emptyForm = {
   zip_code: '', street: '', neighborhood: '', city: '', state: '', address_notes: '',
 };
 
+const emptyAddress = { id: null, zip_code: '', street: '', neighborhood: '', city: '', state: '', notes: '' };
+
 export default function ProfileEditDialog({ open, onClose, user, onSaved }) {
   const [restaurant, setRestaurant] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [extraAddress, setExtraAddress] = useState(null); // registro salvo, se houver
+  const [showExtraAddress, setShowExtraAddress] = useState(false);
+  const [extraForm, setExtraForm] = useState(emptyAddress);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [lookingUpCep, setLookingUpCep] = useState(false);
+  const [lookingUpCep2, setLookingUpCep2] = useState(false);
 
   useEffect(() => {
     if (open && user) {
       setLoading(true);
-      base44.entities.Restaurant.filter({ user_id: user.id })
-        .then(rests => {
+      Promise.all([
+        base44.entities.Restaurant.filter({ user_id: user.id }),
+        base44.entities.Address?.filter ? base44.entities.Address.filter({ user_id: user.id }) : Promise.resolve([]),
+      ])
+        .then(([rests, addrs]) => {
           if (rests.length > 0) {
             const r = rests[0];
             setRestaurant(r);
@@ -38,30 +47,50 @@ export default function ProfileEditDialog({ open, onClose, user, onSaved }) {
             setRestaurant(null);
             setForm(emptyForm);
           }
+          if (addrs && addrs.length > 0) {
+            const a = addrs[0];
+            setExtraAddress(a);
+            setExtraForm({ id: a.id, zip_code: a.zip_code || '', street: a.street || '', neighborhood: a.neighborhood || '', city: a.city || '', state: a.state || '', notes: a.notes || '' });
+            setShowExtraAddress(true);
+          } else {
+            setExtraAddress(null);
+            setExtraForm(emptyAddress);
+            setShowExtraAddress(false);
+          }
         })
         .catch(() => { setRestaurant(null); setForm(emptyForm); })
         .finally(() => setLoading(false));
     }
   }, [open, user]);
 
+  const lookupCep = async (digits) => {
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      const data = await res.json();
+      return data.erro ? null : data;
+    } catch { return null; }
+  };
+
   const handleCepBlur = async () => {
     const digits = (form.zip_code || '').replace(/\D/g, '');
     if (digits.length !== 8) return;
     setLookingUpCep(true);
-    try {
-      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
-      const data = await res.json();
-      if (!data.erro) {
-        setForm(prev => ({
-          ...prev,
-          street: data.logradouro || prev.street,
-          neighborhood: data.bairro || prev.neighborhood,
-          city: data.localidade || prev.city,
-          state: data.uf || prev.state,
-        }));
-      }
-    } catch {}
+    const data = await lookupCep(digits);
+    if (data) {
+      setForm(prev => ({ ...prev, street: data.logradouro || prev.street, neighborhood: data.bairro || prev.neighborhood, city: data.localidade || prev.city, state: data.uf || prev.state }));
+    }
     setLookingUpCep(false);
+  };
+
+  const handleCepBlur2 = async () => {
+    const digits = (extraForm.zip_code || '').replace(/\D/g, '');
+    if (digits.length !== 8) return;
+    setLookingUpCep2(true);
+    const data = await lookupCep(digits);
+    if (data) {
+      setExtraForm(prev => ({ ...prev, street: data.logradouro || prev.street, neighborhood: data.bairro || prev.neighborhood, city: data.localidade || prev.city, state: data.uf || prev.state }));
+    }
+    setLookingUpCep2(false);
   };
 
   const handleSave = async (e) => {
@@ -80,6 +109,21 @@ export default function ProfileEditDialog({ open, onClose, user, onSaved }) {
       } else {
         await base44.entities.Restaurant.create({ ...payload, user_id: user.id });
       }
+
+      if (showExtraAddress && extraForm.street) {
+        const extraPayload = {
+          zip_code: extraForm.zip_code, street: extraForm.street, neighborhood: extraForm.neighborhood,
+          city: extraForm.city, state: extraForm.state, notes: extraForm.notes || null,
+        };
+        if (extraAddress) {
+          await base44.entities.Address.update(extraAddress.id, extraPayload);
+        } else {
+          await base44.entities.Address.create({ ...extraPayload, user_id: user.id, label: 'Endereço 2' });
+        }
+      } else if (!showExtraAddress && extraAddress) {
+        await base44.entities.Address.delete(extraAddress.id);
+      }
+
       onSaved?.();
       onClose();
     } catch (err) {
@@ -115,7 +159,7 @@ export default function ProfileEditDialog({ open, onClose, user, onSaved }) {
               <Input required value={form.contact_number} onChange={e => setForm({ ...form, contact_number: maskPhone(e.target.value) })} className="mt-1" placeholder="(11) 99999-9999" />
             </div>
             <div className="pt-2 border-t border-slate-100">
-              <Label>Endereço para Envio *</Label>
+              <Label>Endereço 1 (principal) *</Label>
               <div className="relative mt-1">
                 <Input required value={form.zip_code} onChange={e => setForm({ ...form, zip_code: maskCEP(e.target.value) })} onBlur={handleCepBlur} placeholder="CEP: 00000-000" />
                 {lookingUpCep && <Loader2 className="w-4 h-4 animate-spin absolute right-3 top-2.5 text-slate-400" />}
@@ -129,9 +173,36 @@ export default function ProfileEditDialog({ open, onClose, user, onSaved }) {
               <Input required value={form.state} onChange={e => setForm({ ...form, state: e.target.value.toUpperCase().slice(0, 2) })} placeholder="UF" />
             </div>
             <div>
-              <Label>Observações do Endereço (opcional)</Label>
+              <Label>Observações do Endereço 1 (opcional)</Label>
               <Textarea value={form.address_notes} onChange={e => setForm({ ...form, address_notes: e.target.value })} className="mt-1" rows={2} placeholder="Ex: portão azul, tocar interfone 2" />
             </div>
+
+            {showExtraAddress ? (
+              <div className="pt-3 border-t border-slate-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Endereço 2 (opcional)</Label>
+                  <button type="button" onClick={() => { setShowExtraAddress(false); setExtraForm(emptyAddress); }} className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1">
+                    <Trash2 className="w-3 h-3" /> Remover
+                  </button>
+                </div>
+                <div className="relative">
+                  <Input value={extraForm.zip_code} onChange={e => setExtraForm({ ...extraForm, zip_code: maskCEP(e.target.value) })} onBlur={handleCepBlur2} placeholder="CEP: 00000-000" />
+                  {lookingUpCep2 && <Loader2 className="w-4 h-4 animate-spin absolute right-3 top-2.5 text-slate-400" />}
+                </div>
+                <Input value={extraForm.street} onChange={e => setExtraForm({ ...extraForm, street: e.target.value })} placeholder="Rua / Avenida" />
+                <Input value={extraForm.neighborhood} onChange={e => setExtraForm({ ...extraForm, neighborhood: e.target.value })} placeholder="Bairro" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Input value={extraForm.city} onChange={e => setExtraForm({ ...extraForm, city: e.target.value })} placeholder="Cidade" />
+                  <Input value={extraForm.state} onChange={e => setExtraForm({ ...extraForm, state: e.target.value.toUpperCase().slice(0, 2) })} placeholder="UF" />
+                </div>
+                <Textarea value={extraForm.notes} onChange={e => setExtraForm({ ...extraForm, notes: e.target.value })} rows={2} placeholder="Observações do Endereço 2 (opcional)" />
+              </div>
+            ) : (
+              <button type="button" onClick={() => setShowExtraAddress(true)} className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium hover:text-emerald-700 pt-2 border-t border-slate-100 w-full">
+                <Plus className="w-4 h-4" /> Adicionar outro endereço (opcional, máx. 2)
+              </button>
+            )}
+
             <DialogFooter>
               {restaurant && <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>}
               <Button type="submit" disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto">

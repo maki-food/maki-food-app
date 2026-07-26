@@ -43,7 +43,7 @@ export default function ClientProducts() {
   }, []);
 
   const publishedProducts = products.filter(p => (p.price || 0) > 0);
-  const newProducts = [...publishedProducts].sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
+  const newProducts = publishedProducts.filter(p => p.is_new);
   const activePromos = promotions.filter(pr => {
     const prod = products.find(p => p.id === pr.product_id);
     return prod && (prod.price || 0) > 0;
@@ -86,7 +86,7 @@ export default function ClientProducts() {
         icon={Sparkles}
         items={newProducts}
         variantsByProduct={variantsByProduct}
-        seeMoreHref="/loja/produtos"
+        seeMoreHref="/loja/produtos?novos=1"
       />
 
       {!hasContent && (

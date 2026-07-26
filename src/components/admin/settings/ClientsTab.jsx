@@ -16,8 +16,19 @@ export default function ClientsTab() {
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
 
+  const [profilesByUser, setProfilesByUser] = useState({});
+
   const load = async () => {
-    try { setRestaurants(await base44.entities.Restaurant.list('-created_date')); } catch {}
+    try {
+      const [rests, profiles] = await Promise.all([
+        base44.entities.Restaurant.list('-created_date'),
+        base44.entities.User.list(),
+      ]);
+      setRestaurants(rests);
+      const map = {};
+      for (const p of profiles) map[p.id] = p;
+      setProfilesByUser(map);
+    } catch {}
     setLoading(false);
   };
 
@@ -66,7 +77,7 @@ export default function ClientsTab() {
     return (
       <div className="text-center py-12 text-slate-400 bg-white rounded-xl border border-slate-200">
         <Store className="w-12 h-12 mx-auto mb-3" />
-        <p className="font-medium">Nenhum cliente fully cadastrado</p>
+        <p className="font-medium">Nenhum cliente totalmente cadastrado</p>
         <p className="text-sm mt-1">Clientes aparecem aqui após completarem o cadastro</p>
       </div>
     );
@@ -76,7 +87,9 @@ export default function ClientsTab() {
     <div>
       <p className="text-sm text-slate-500 mb-4">{fullyRegistered.length} clientes cadastrados</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {fullyRegistered.map(r => (
+        {fullyRegistered.map(r => {
+          const profile = profilesByUser[r.user_id];
+          return (
           <div key={r.id} className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-md transition-shadow">
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -84,7 +97,8 @@ export default function ClientsTab() {
                   <Store className="w-5 h-5 text-emerald-600" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-900 truncate">{r.restaurant_name}</p>
+                  <p className="font-semibold text-slate-900 truncate">{r.account_name || profile?.full_name || 'Cliente'}</p>
+                  <p className="text-xs text-slate-500 truncate">{r.restaurant_name}</p>
                   <p className="text-xs text-slate-400">Desde {formatDate(r.created_date)}</p>
                 </div>
               </div>
@@ -98,6 +112,7 @@ export default function ClientsTab() {
               </div>
             </div>
             <div className="space-y-1.5 text-sm">
+              {profile?.email && <p className="flex items-center gap-2 text-slate-500"><Mail className="w-3.5 h-3.5" /> {profile.email}</p>}
               {r.cnpj && <p className="flex items-center gap-2 text-slate-500"><FileText className="w-3.5 h-3.5" /> CNPJ: {r.cnpj}</p>}
               {r.contact_number && <p className="flex items-center gap-2 text-slate-500"><Phone className="w-3.5 h-3.5" /> {r.contact_number}</p>}
               {(r.street || r.address) && (
@@ -106,10 +121,10 @@ export default function ClientsTab() {
                   {[r.street, r.neighborhood, r.city, r.state, r.zip_code].filter(Boolean).join(', ') || r.address}
                 </p>
               )}
-              {r.account_name && <p className="flex items-center gap-2 text-slate-500"><Mail className="w-3.5 h-3.5" /> {r.account_name}</p>}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>

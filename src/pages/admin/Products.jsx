@@ -3,7 +3,7 @@ import { base44 } from '@/api/supabaseClient';
 import { formatBRL } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import ProductForm from '@/components/admin/ProductForm';
-import { Plus, Pencil, Trash2, Package, Star, Pause, Play } from 'lucide-react';
+import { Plus, Pencil, Trash2, Package, Star, Pause, Play, Sparkles } from 'lucide-react';
 
 export default function Products() {
   const [products, setProducts] = useState([]);
@@ -33,6 +33,10 @@ export default function Products() {
 
   const toggleHighlight = async (p) => {
     await base44.entities.Product.update(p.id, { is_promotion: !p.is_promotion });
+  };
+
+  const toggleNew = async (p) => {
+    await base44.entities.Product.update(p.id, { is_new: !p.is_new });
   };
 
   return (
@@ -92,6 +96,9 @@ export default function Products() {
                     <div className="flex justify-end gap-1">
                       <button onClick={() => toggleHighlight(p)} title="Marcar como destaque" className={`p-2 rounded-lg hover:bg-slate-100 ${p.is_promotion ? 'text-amber-500' : 'text-slate-400 hover:text-amber-500'}`}>
                         <Star className={`w-4 h-4 ${p.is_promotion ? 'fill-amber-500' : ''}`} />
+                      </button>
+                      <button onClick={() => toggleNew(p)} title={p.is_new ? 'Remover de Novos Produtos' : 'Marcar como Novo'} className={`p-2 rounded-lg hover:bg-slate-100 ${p.is_new ? 'text-blue-500' : 'text-slate-400 hover:text-blue-500'}`}>
+                        <Sparkles className={`w-4 h-4 ${p.is_new ? 'fill-blue-500' : ''}`} />
                       </button>
                       <button onClick={() => togglePause(p)} title={p.available === false ? 'Despausar' : 'Pausar'} className={`p-2 rounded-lg hover:bg-slate-100 ${p.available === false ? 'text-red-500' : 'text-slate-400 hover:text-red-500'}`}>
                         {p.available === false ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}

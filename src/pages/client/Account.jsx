@@ -5,7 +5,7 @@ import { useSettings } from '@/context/SettingsContext';
 import ProfileEditDialog from '@/components/client/ProfileEditDialog';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { User, ClipboardList, UserCog, LogOut, HelpCircle, ShieldCheck, ChevronRight, MessageCircle } from 'lucide-react';
+import { User, ClipboardList, UserCog, LogOut, HelpCircle, ShieldCheck, ChevronRight, MessageCircle, MapPin } from 'lucide-react';
 
 export default function Account() {
   const [user, setUser] = useState(undefined);
@@ -46,7 +46,7 @@ export default function Account() {
 
         <div className="bg-slate-50 rounded-2xl p-6 text-center mb-6">
           <p className="text-sm text-slate-600 mb-4">
-            Para comprar, precisa de uma conta, para que possa fazer as suas compras em menos tempo e também possamos fornecer um serviço melhor.
+            Para comprar,você precisa de uma conta, para que possa fazer as suas compras em menos tempo e também possamos fornecer um serviço melhor.
           </p>
           <Link to="/login">
             <Button className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 font-semibold">Entrar</Button>
@@ -86,17 +86,22 @@ export default function Account() {
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100 mb-4">
         <button onClick={() => navigate('/loja/pedidos')} className="w-full flex items-center gap-3 px-4 py-4 hover:bg-slate-50 text-left">
           <ClipboardList className="w-5 h-5 text-slate-400" />
-          <span className="flex-1 font-medium text-slate-700">Meus Pedidos</span>
+          <span className="flex-1 font-medium text-slate-700">Meus pedidos</span>
           <ChevronRight className="w-4 h-4 text-slate-400" />
         </button>
         <button onClick={() => setProfileOpen(true)} className="w-full flex items-center gap-3 px-4 py-4 hover:bg-slate-50 text-left">
           <UserCog className="w-5 h-5 text-slate-400" />
-          <span className="flex-1 font-medium text-slate-700">Editar Perfil</span>
+          <span className="flex-1 font-medium text-slate-700">Dados pessoais</span>
+          <ChevronRight className="w-4 h-4 text-slate-400" />
+        </button>
+        <button onClick={() => setProfileOpen(true)} className="w-full flex items-center gap-3 px-4 py-4 hover:bg-slate-50 text-left">
+          <MapPin className="w-5 h-5 text-slate-400" />
+          <span className="flex-1 font-medium text-slate-700">Endereços</span>
           <ChevronRight className="w-4 h-4 text-slate-400" />
         </button>
         <button onClick={openWhatsApp} className="w-full flex items-center gap-3 px-4 py-4 hover:bg-slate-50 text-left">
-          <MessageCircle className="w-5 h-5 text-slate-400" />
-          <span className="flex-1 font-medium text-slate-700">Falar com Atendente</span>
+          <HelpCircle className="w-5 h-5 text-slate-400" />
+          <span className="flex-1 font-medium text-slate-700">Ajuda</span>
           <ChevronRight className="w-4 h-4 text-slate-400" />
         </button>
         <button onClick={() => setPrivacyOpen(true)} className="w-full flex items-center gap-3 px-4 py-4 hover:bg-slate-50 text-left">

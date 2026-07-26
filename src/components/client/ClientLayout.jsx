@@ -1,40 +1,94 @@
-import React from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useSettings } from '@/context/SettingsContext';
 import { useCart } from '@/context/CartContext';
-import { Fish, ShoppingCart } from 'lucide-react';
+import { Fish, ShoppingCart, Search, LayoutGrid } from 'lucide-react';
+import ListIcon from '@/components/client/ListIcon';
 import BackToTop from '@/components/BackToTop';
 import BottomNav from '@/components/client/BottomNav';
 import FloatingCartBar from '@/components/client/FloatingCartBar';
 import AccountPromptModal from '@/components/client/AccountPromptModal';
+import DesktopAccountMenu from '@/components/client/DesktopAccountMenu';
+import { formatBRL } from '@/lib/format';
 
 export default function ClientLayout() {
   const location = useLocation();
-  const { count } = useCart();
+  const navigate = useNavigate();
+  const { count, total } = useCart();
   const { settings } = useSettings();
+  const [search, setSearch] = useState('');
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    if (search.trim()) navigate(`/loja/produtos?busca=${encodeURIComponent(search.trim())}`);
+  };
 
   return (
-    <div className="min-h-screen bg-background pb-20">
-      <header className="sticky top-0 z-40 backdrop-blur-md border-b border-slate-200" style={{ backgroundColor: settings?.topbar_bg || '#ffffff', color: settings?.store_text_color || '#475569' }}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <Link to="/loja" className="flex items-center gap-2">
-            <div className="w-9 h-9 bg-emerald-600 rounded-xl flex items-center justify-center overflow-hidden flex-shrink-0">
+    <div className="min-h-screen bg-background pb-20 lg:pb-0">
+      <header
+        className="sticky top-0 z-40 backdrop-blur-md border-b border-slate-200"
+        style={{ backgroundColor: settings?.topbar_bg || '#ffffff', color: settings?.store_text_color || '#475563' }}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-4">
+          <Link to="/loja" className="flex items-center gap-2 flex-shrink-0">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center overflow-hidden flex-shrink-0" style={{ backgroundColor: settings?.primary_color || '#059669' }}>
               {settings?.logo_url ? <img src={settings.logo_url} alt="Logo" className="w-full h-full object-cover" /> : <Fish className="w-5 h-5 text-white" />}
             </div>
-            <span className="font-bold text-lg">{settings?.app_name || 'SushiPro'}</span>
+            <span className="font-bold text-lg whitespace-nowrap">{settings?.app_name || 'SushiPro'}</span>
           </Link>
+
+          {/* Busca + navegação: só aparece no desktop */}
+          <form onSubmit={handleSearch} className="hidden lg:flex flex-1 max-w-md">
+            <div className="relative w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Buscar produtos"
+                className="w-full h-10 pl-9 pr-3 rounded-full bg-slate-100 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+          </form>
+          <nav className="hidden lg:flex items-center gap-1 flex-shrink-0">
+            <Link to="/loja/categorias" className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg hover:bg-black/5">
+              <LayoutGrid className="w-4 h-4" /> Categorias
+            </Link>
+            <Link to="/loja/listas" className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg hover:bg-black/5">
+              <ListIcon className="w-4 h-4" /> Listas
+            </Link>
+          </nav>
+
+          <div className="flex-1 lg:flex-none" />
+
+          <div className="hidden lg:block flex-shrink-0">
+            <DesktopAccountMenu />
+          </div>
+
           <Link
             to="/loja/carrinho"
-            className={`relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${location.pathname === '/loja/carrinho' ? 'bg-emerald-50 text-emerald-700' : 'hover:bg-black/5'}`}
+            className="relative flex items-center gap-2 px-3 lg:px-4 h-10 rounded-full font-semibold text-sm flex-shrink-0"
+            style={{ backgroundColor: (settings?.primary_color || '#059669') + '1a', color: settings?.primary_color || '#059669' }}
           >
             <ShoppingCart className="w-5 h-5" />
-            {count > 0 && (
-              <span className="absolute -top-1 -right-1 bg-emerald-600 text-white text-xs font-bold min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center">
-                {count}
-              </span>
-            )}
+            <span className="lg:hidden absolute -top-1 -right-1 bg-emerald-600 text-white text-xs font-bold min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center" style={{ display: count > 0 ? 'flex' : 'none' }}>
+              {count}
+            </span>
+            {count > 0 && <span className="hidden lg:inline">{count} · {formatBRL(total)}</span>}
           </Link>
         </div>
+
+        {/* Busca compacta no mobile, embaixo do cabeçalho */}
+        <form onSubmit={handleSearch} className="lg:hidden px-4 pb-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar produtos"
+              className="w-full h-10 pl-9 pr-3 rounded-full bg-slate-100 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+        </form>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 lg:py-8">
@@ -42,9 +96,13 @@ export default function ClientLayout() {
       </main>
 
       <BackToTop />
-      <FloatingCartBar />
+      <div className="lg:hidden">
+        <FloatingCartBar />
+      </div>
       <AccountPromptModal />
-      <BottomNav />
+      <div className="lg:hidden">
+        <BottomNav />
+      </div>
     </div>
   );
 }

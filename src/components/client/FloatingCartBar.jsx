@@ -9,7 +9,7 @@ export default function FloatingCartBar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  if (count === 0 || location.pathname === '/loja/carrinho') return null;
+  if (count === 0 || location.pathname === '/loja/carrinho' || location.pathname === '/loja/conta') return null;
 
   return (
     <div
@@ -18,18 +18,16 @@ export default function FloatingCartBar() {
     >
       <button
         onClick={() => navigate('/loja/carrinho')}
-        className="w-full bg-amber-400 hover:bg-amber-500 text-slate-900 rounded-2xl shadow-lg flex items-stretch overflow-hidden"
+        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl shadow-lg flex items-center justify-between px-5 py-3.5 transition-colors"
       >
-        <div className="flex items-center gap-3 px-4 py-3 flex-1">
-          <ShoppingCart className="w-6 h-6 flex-shrink-0" />
+        <div className="flex items-center gap-3">
+          <ShoppingCart className="w-5 h-5 flex-shrink-0" />
           <div className="text-left leading-tight">
-            <p className="font-bold text-sm">{count} {count === 1 ? 'unidade' : 'unidades'}</p>
-            <p className="text-xs opacity-80">Custo estimado {formatBRL(total)}</p>
+            <p className="font-semibold text-sm">{count} {count === 1 ? 'unidade' : 'unidades'}</p>
+            <p className="text-xs text-emerald-100">Custo estimado {formatBRL(total)}</p>
           </div>
         </div>
-        <div className="flex items-center px-5 bg-slate-900 text-white font-semibold text-sm">
-          Ver carrinho
-        </div>
+        <span className="font-semibold text-sm bg-white/15 px-4 py-2 rounded-xl">Ver carrinho</span>
       </button>
     </div>
   );

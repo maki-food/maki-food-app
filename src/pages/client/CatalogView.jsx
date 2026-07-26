@@ -10,12 +10,13 @@ export default function CatalogView() {
   const navigate = useNavigate();
   const category = searchParams.get('categoria') || '';
   const isPromocoes = searchParams.get('promocoes') === '1';
+  const isNovos = searchParams.get('novos') === '1';
 
   const [products, setProducts] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [variantsByProduct, setVariantsByProduct] = useState({});
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(searchParams.get('busca') || '');
 
   useEffect(() => {
     Promise.all([
@@ -40,6 +41,8 @@ export default function CatalogView() {
   let filtered = publishedProducts;
   if (isPromocoes) {
     filtered = filtered.filter(p => promoMap.has(p.id));
+  } else if (isNovos) {
+    filtered = filtered.filter(p => p.is_new);
   } else if (category) {
     filtered = filtered.filter(p => p.category === category);
   }
@@ -47,7 +50,7 @@ export default function CatalogView() {
     filtered = filtered.filter(p => p.name?.toLowerCase().includes(search.toLowerCase()));
   }
 
-  const title = isPromocoes ? 'Promoções' : (category || 'Todos os Produtos');
+  const title = isPromocoes ? 'Promoções' : isNovos ? 'Novos Produtos' : (category || 'Todos os Produtos');
 
   if (loading) {
     return <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>;
