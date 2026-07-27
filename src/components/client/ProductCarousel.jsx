@@ -29,7 +29,7 @@ export default function ProductCarousel({ title, icon: Icon, items, variantsByPr
       </div>
       <div className="flex gap-4 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hidden snap-x snap-mandatory">
         {visible.map(product => (
-          <div key={product.id} className="w-40 sm:w-48 flex-shrink-0 snap-start">
+          <div key={product.id} className="w-44 sm:w-52 flex-shrink-0 snap-start">
             <ProductCard
               product={product}
               promoPrice={promoMap?.get(product.id)?.promotional_price}

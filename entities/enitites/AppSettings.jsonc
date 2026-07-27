@@ -12,7 +12,24 @@
     "hero_image_url": {
       "type": "string"
     },
+    "hero_image_mobile_url": {
+      "type": "string"
+    },
     "banners": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "desktop_banners": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "mobile_banners": {
       "type": "array",
       "items": {
         "type": "string"

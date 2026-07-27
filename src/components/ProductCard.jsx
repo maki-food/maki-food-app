@@ -69,11 +69,11 @@ export default function ProductCard({ product, promoPrice, variants = [] }) {
             </span>
           )}
         </button>
-        <div className="p-4 flex flex-col flex-1">
+        <div className="p-4 flex flex-col flex-1 min-h-0">
           <button type="button" onClick={() => setDetailOpen(true)} className="text-left">
-            <h3 className="font-semibold text-slate-900 leading-tight hover:text-emerald-700 line-clamp-2 min-h-[2.5rem]">{product.name}</h3>
+            <h3 className="font-semibold text-slate-900 leading-tight hover:text-emerald-700 line-clamp-2 overflow-hidden">{product.name}</h3>
           </button>
-          <p className="text-sm text-slate-500 mt-1 line-clamp-2 min-h-[2.5rem]">
+          <p className="text-sm text-slate-500 mt-1 line-clamp-2 overflow-hidden">
             {product.description}
             {hasLongDescription && (
               <button type="button" onClick={() => setDetailOpen(true)} className="text-emerald-600 font-medium ml-1 hover:underline">

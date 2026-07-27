@@ -12,8 +12,22 @@ export default function ClientProducts() {
   const [promotions, setPromotions] = useState([]);
   const [variantsByProduct, setVariantsByProduct] = useState({});
   const [loading, setLoading] = useState(true);
+  const [isDesktop, setIsDesktop] = useState(true);
   const { settings } = useSettings();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mediaQuery = window.matchMedia('(min-width: 640px)');
+    const updateIsDesktop = (event) => setIsDesktop(event.matches);
+    setIsDesktop(mediaQuery.matches);
+    mediaQuery.addEventListener('change', updateIsDesktop);
+    return () => mediaQuery.removeEventListener('change', updateIsDesktop);
+  }, []);
+
+  const desktopBanners = settings?.desktop_banners?.length > 0 ? settings.desktop_banners : settings?.banners || [];
+  const mobileBanners = settings?.mobile_banners?.length > 0 ? settings.mobile_banners : desktopBanners;
+  const banners = isDesktop ? desktopBanners : mobileBanners;
 
   const load = async () => {
     try {
@@ -56,14 +70,19 @@ export default function ClientProducts() {
   }
 
   const hasContent = newProducts.length > 0 || promoProducts.length > 0;
+  const hasBanners = banners.length > 0;
 
   return (
     <div>
-      {settings?.banners && settings.banners.length > 0 ? (
-        <BannerCarousel banners={settings.banners} interval={settings.banner_interval || 5} />
-      ) : settings?.hero_image_url ? (
+      {hasBanners ? (
+        <BannerCarousel banners={banners} interval={settings?.banner_interval || 5} />
+      ) : (settings?.hero_image_mobile_url || settings?.hero_image_url) ? (
         <div className="relative rounded-2xl overflow-hidden mb-6 aspect-[16/9] sm:aspect-[3/1]">
-          <img src={settings.hero_image_url} alt="Banner promocional" className="w-full h-full object-cover" loading="eager" decoding="async" />
+          <picture>
+            {settings.hero_image_mobile_url ? <source media="(max-width: 639px)" srcSet={settings.hero_image_mobile_url} /> : null}
+            {settings.hero_image_url ? <source media="(min-width: 640px)" srcSet={settings.hero_image_url} /> : null}
+            <img src={settings.hero_image_mobile_url || settings.hero_image_url} alt="Banner promocional" className="w-full h-full object-cover" loading="eager" decoding="async" />
+          </picture>
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent flex items-end justify-center pb-6 sm:pb-8">
             <Button onClick={() => navigate('/loja/categorias')} size="lg" className="bg-white text-slate-900 hover:bg-slate-100 px-8 h-12 text-base font-semibold shadow-lg">
               <ShoppingBag className="w-5 h-5 mr-2" /> Ver Produtos

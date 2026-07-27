@@ -6,13 +6,36 @@ import { ChevronDown, HelpCircle, LogOut, User } from 'lucide-react';
 
 export default function DesktopAccountMenu() {
   const [user, setUser] = useState(undefined);
+  const [accountName, setAccountName] = useState(null);
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const { settings } = useSettings();
   const navigate = useNavigate();
 
   useEffect(() => {
-    base44.auth.me().then(setUser).catch(() => setUser(null));
+    let isMounted = true;
+
+    base44.auth.me()
+      .then((currentUser) => {
+        if (!isMounted) return;
+        setUser(currentUser);
+        if (!currentUser) {
+          setAccountName(null);
+          return null;
+        }
+        return base44.entities.Restaurant.filter({ user_id: currentUser.id });
+      })
+      .then((rests) => {
+        if (!isMounted) return;
+        setAccountName(Array.isArray(rests) && rests.length > 0 ? rests[0]?.account_name || null : null);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setUser(null);
+        setAccountName(null);
+      });
+
+    return () => { isMounted = false; };
   }, []);
 
   useEffect(() => {
@@ -26,6 +49,8 @@ export default function DesktopAccountMenu() {
       window.open(`https://wa.me/${settings.whatsapp_number.replace(/\D/g, '')}`, '_blank');
     }
   };
+
+  const displayName = accountName || (user?.full_name ? user.full_name.split(' ')[0] : 'Minha Conta');
 
   const handleLogout = () => {
     const cartBackup = localStorage.getItem('cart');
@@ -41,7 +66,7 @@ export default function DesktopAccountMenu() {
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg hover:bg-black/5"
       >
-        {user ? (user.full_name || 'Minha Conta') : 'Conecte-se'}
+        {user ? `Olá, ${displayName}` : 'Conecte-se'}
         <ChevronDown className="w-4 h-4" />
       </button>
 
@@ -57,7 +82,7 @@ export default function DesktopAccountMenu() {
                     <User className="w-5 h-5 text-emerald-600" />
                   </div>
                   <div className="min-w-0">
-                    <p className="font-bold text-slate-900 truncate">{user.full_name || 'Minha Conta'}</p>
+                    <p className="font-bold text-slate-900 truncate">{accountName || user.full_name || 'Minha Conta'}</p>
                     <p className="text-xs text-slate-400 truncate">{user.email}</p>
                   </div>
                 </div>

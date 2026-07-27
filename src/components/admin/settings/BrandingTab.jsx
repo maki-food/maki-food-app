@@ -17,7 +17,7 @@ const ColorField = ({ label, value, onChange }) => (
 
 export default function BrandingTab() {
   const { settings, refresh } = useSettings();
-  const [form, setForm] = useState({ app_name: 'SushiPro', logo_url: '', hero_image_url: '', banners: [], banner_interval: 5, whatsapp_number: '', sidebar_bg: '#0f172a', primary_color: '#059669', page_bg: '#f8fafc', topbar_bg: '#ffffff', category_bar_bg: '#f8fafc', admin_text_color: '#ffffff', store_text_color: '#475569', expiration_threshold_days: 7 });
+  const [form, setForm] = useState({ app_name: 'SushiPro', logo_url: '', hero_image_url: '', banners: [], desktop_banners: [], mobile_banners: [], banner_interval: 5, whatsapp_number: '', sidebar_bg: '#0f172a', primary_color: '#059669', page_bg: '#f8fafc', topbar_bg: '#ffffff', category_bar_bg: '#f8fafc', admin_text_color: '#ffffff', store_text_color: '#475569', expiration_threshold_days: 7 });
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -28,6 +28,8 @@ export default function BrandingTab() {
         logo_url: settings.logo_url || '',
         hero_image_url: settings.hero_image_url || '',
         banners: settings.banners || [],
+        desktop_banners: settings.desktop_banners || settings.banners || [],
+        mobile_banners: settings.mobile_banners || [],
         banner_interval: settings.banner_interval || 5,
         whatsapp_number: settings.whatsapp_number || '',
         sidebar_bg: settings.sidebar_bg || '#0f172a',
@@ -54,9 +56,10 @@ export default function BrandingTab() {
     setUploading(false);
   };
 
-  const handleBannerUpload = async (e) => {
+  const handleBannerUpload = async (e, mode = 'desktop') => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
+    const key = mode === 'mobile' ? 'mobile_banners' : 'desktop_banners';
     setUploading(true);
     try {
       const optimized = await Promise.all(files.map(f => optimizeImage(f)));
@@ -64,36 +67,117 @@ export default function BrandingTab() {
         optimized.map(file => base44.integrations.Core.UploadFile({ file }))
       );
       const newUrls = uploaded.map(r => r.file_url);
-      setForm(prev => ({ ...prev, banners: [...(prev.banners || []), ...newUrls] }));
+      setForm(prev => ({ ...prev, [key]: [...(prev[key] || []), ...newUrls] }));
     } catch {}
     setUploading(false);
   };
 
-  const removeBanner = (idx) => {
-    setForm(prev => ({ ...prev, banners: prev.banners.filter((_, i) => i !== idx) }));
+  const removeBanner = (idx, mode = 'desktop') => {
+    const key = mode === 'mobile' ? 'mobile_banners' : 'desktop_banners';
+    setForm(prev => ({ ...prev, [key]: (prev[key] || []).filter((_, i) => i !== idx) }));
   };
 
-  const moveBanner = (idx, dir) => {
-    const newBanners = [...(form.banners || [])];
+  const moveBanner = (idx, dir, mode = 'desktop') => {
+    const key = mode === 'mobile' ? 'mobile_banners' : 'desktop_banners';
+    const newBanners = [...(form[key] || [])];
     const target = idx + dir;
     if (target < 0 || target >= newBanners.length) return;
     [newBanners[idx], newBanners[target]] = [newBanners[target], newBanners[idx]];
-    setForm(prev => ({ ...prev, banners: newBanners }));
+    setForm(prev => ({ ...prev, [key]: newBanners }));
   };
+
+  const renderBannerSection = ({ title, subtitle, description, showIcon = true, mode = 'desktop' }) => {
+    const key = mode === 'mobile' ? 'mobile_banners' : 'desktop_banners';
+    const banners = form[key] || [];
+
+    return (
+      <div className="p-5">
+        <div className="flex flex-col gap-2 mb-4">
+          <div className="flex items-center gap-2">
+            {showIcon ? <ImageIcon className="w-4 h-4 text-slate-400" /> : null}
+            {title ? <h3 className="font-semibold text-slate-900">{title}</h3> : null}
+          </div>
+          {subtitle ? <p className="text-sm font-medium text-slate-600">{subtitle}</p> : null}
+        </div>
+
+        <p className="text-xs text-slate-400 mb-3">{description || 'Envie uma ou mais imagens para o carrossel de banners exibido no topo da loja. Recomendado: 1200x400px.'}</p>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+          {banners.map((url, idx) => (
+            <div key={idx} className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-[3/1]">
+              <img src={url} alt={`Banner ${idx + 1}`} className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-1">
+                <button type="button" onClick={() => moveBanner(idx, -1, mode)} disabled={idx === 0} className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center text-slate-600 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-0" title="Mover esquerda">
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <button type="button" onClick={() => moveBanner(idx, 1, mode)} disabled={idx === banners.length - 1} className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center text-slate-600 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-0" title="Mover direita">
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+                <button type="button" onClick={() => removeBanner(idx, mode)} className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center text-red-600 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity" title="Remover">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+          <label className="aspect-[3/1] rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center bg-slate-50 cursor-pointer hover:bg-slate-100">
+            <div className="text-center">
+              <Plus className="w-6 h-6 text-slate-300 mx-auto mb-1" />
+              <span className="text-xs text-slate-400">{uploading ? 'Enviando...' : 'Adicionar Banner'}</span>
+            </div>
+            <input type="file" accept="image/*" multiple className="hidden" onChange={e => handleBannerUpload(e, mode)} disabled={uploading} />
+          </label>
+        </div>
+      </div>
+    );
+  };
+
+  const renderBannerPanels = () => (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-200">
+      {renderBannerSection({
+        title: 'Banners da Loja (Carrossel)',
+        subtitle: 'Modo Computador',
+        description: 'Envie uma ou mais imagens para o carrossel de banners exibido no topo da loja. Recomendado: 1200x400px.',
+        showIcon: true,
+        mode: 'desktop',
+      })}
+      {renderBannerSection({
+        title: '',
+        subtitle: 'Modo Celular',
+        description: 'Envie uma ou mais imagens para o carrossel de banners exibido no topo da loja. Recomendado: 500x375px.',
+        showIcon: false,
+        mode: 'mobile',
+      })}
+      <div className="p-5 flex items-center gap-3 border-t border-slate-200">
+        <Clock className="w-4 h-4 text-slate-400" />
+        <Label className="mb-0">Tempo de transição (segundos)</Label>
+        <Input type="number" min="2" max="30" value={form.banner_interval} onChange={e => setForm({ ...form, banner_interval: parseInt(e.target.value) || 5 })} className="w-24" />
+        <p className="text-xs text-slate-400">Intervalo entre cada slide do carrossel</p>
+      </div>
+    </div>
+  );
 
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
+      const payload = {
+        ...form,
+        banners: form.desktop_banners || [],
+      };
+
       if (settings?.id) {
-        await base44.entities.AppSettings.update(settings.id, form);
+        await base44.entities.AppSettings.update(settings.id, payload);
       } else {
-        await base44.entities.AppSettings.create(form);
+        await base44.entities.AppSettings.create(payload);
       }
       await logAction('Aparência do Sistema Atualizada', `App: ${form.app_name}, Cor: ${form.primary_color}`);
       refresh();
-    } catch {}
-    setSaving(false);
+    } catch (error) {
+      console.error('Erro ao salvar AppSettings:', error);
+      throw error;
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -134,46 +218,7 @@ export default function BrandingTab() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <ImageIcon className="w-4 h-4 text-slate-400" />
-          <h3 className="font-semibold text-slate-900">Banners da Loja (Carrossel)</h3>
-        </div>
-        <p className="text-xs text-slate-400 mb-3">Envie uma ou mais imagens para o carrossel de banners exibido no topo da loja. Recomendado: 1200x400px.</p>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-          {(form.banners || []).map((url, idx) => (
-            <div key={idx} className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-[3/1]">
-              <img src={url} alt={`Banner ${idx + 1}`} className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-1">
-                <button type="button" onClick={() => moveBanner(idx, -1)} disabled={idx === 0} className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center text-slate-600 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-0" title="Mover esquerda">
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-                <button type="button" onClick={() => moveBanner(idx, 1)} disabled={idx === (form.banners?.length || 0) - 1} className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center text-slate-600 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-0" title="Mover direita">
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-                <button type="button" onClick={() => removeBanner(idx)} className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center text-red-600 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity" title="Remover">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          ))}
-          <label className="aspect-[3/1] rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center bg-slate-50 cursor-pointer hover:bg-slate-100">
-            <div className="text-center">
-              <Plus className="w-6 h-6 text-slate-300 mx-auto mb-1" />
-              <span className="text-xs text-slate-400">{uploading ? 'Enviando...' : 'Adicionar Banner'}</span>
-            </div>
-            <input type="file" accept="image/*" multiple className="hidden" onChange={handleBannerUpload} disabled={uploading} />
-          </label>
-        </div>
-
-        <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
-          <Clock className="w-4 h-4 text-slate-400" />
-          <Label className="mb-0">Tempo de transição (segundos)</Label>
-          <Input type="number" min="2" max="30" value={form.banner_interval} onChange={e => setForm({ ...form, banner_interval: parseInt(e.target.value) || 5 })} className="w-24" />
-          <p className="text-xs text-slate-400">Intervalo entre cada slide do carrossel</p>
-        </div>
-      </div>
+      {renderBannerPanels()}
 
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <div className="flex items-center gap-2 mb-4">
