@@ -1,18 +1,19 @@
 {
-  "name": "Category",
+  "name": "AuditLog",
   "type": "object",
   "properties": {
-    "name": {
+    "user_name": {
       "type": "string"
     },
-    "description": {
+    "action": {
       "type": "string"
     },
-    "image_url": {
+    "details": {
       "type": "string"
     }
   },
   "required": [
-    "name"
+    "user_name",
+    "action"
   ]
 }
