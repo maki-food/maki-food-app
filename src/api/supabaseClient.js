@@ -247,27 +247,28 @@ const auth = {
     throwIfError(error);
   },
 
-  // Cria um funcionário já confirmado (sem e-mail de verificação) — só admin pode chamar
+  // Cria um funcionário já confirmado (sem e-mail de verificação) — só admin pode chamar.
+  // Usa a Edge Function "admin-create-staff" (Admin API oficial do Supabase).
   async adminCreateStaff({ email, password, fullName, role, contactNumber }) {
-    const { data, error } = await supabase.rpc('admin_create_staff', {
-      p_email: email,
-      p_password: password,
-      p_full_name: fullName,
-      p_role: role,
-      p_contact_number: contactNumber || null,
+    const { data: { session } } = await supabase.auth.getSession();
+    const { data, error } = await supabase.functions.invoke('admin-create-staff', {
+      body: { action: 'create', email, password, fullName, role, contactNumber },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
     });
-    throwIfError(error);
+    if (error) throwIfError(error);
+    if (data?.error) throw new Error(data.error);
     return data;
   },
 
   // Atualiza e-mail e/ou senha de um funcionário já existente — só admin pode chamar
   async adminUpdateStaffCredentials({ userId, newEmail, newPassword }) {
-    const { error } = await supabase.rpc('admin_update_staff_credentials', {
-      p_user_id: userId,
-      p_new_email: newEmail || null,
-      p_new_password: newPassword || null,
+    const { data: { session } } = await supabase.auth.getSession();
+    const { data, error } = await supabase.functions.invoke('admin-create-staff', {
+      body: { action: 'update', userId, newEmail, newPassword },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
     });
-    throwIfError(error);
+    if (error) throwIfError(error);
+    if (data?.error) throw new Error(data.error);
   },
 
   // Fluxo de "esqueci a senha" por código digitado (não por link de e-mail)
