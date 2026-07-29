@@ -9,7 +9,7 @@ import { Palette, DollarSign, Users, Store, ScrollText } from 'lucide-react';
 const tabs = [
   { id: 'branding', label: 'Aparência', icon: Palette, component: BrandingTab },
   { id: 'commercial', label: 'Comercial', icon: DollarSign, component: CommercialTab },
-  { id: 'staff', label: 'Equipe', icon: Users, component: StaffTab },
+  { id: 'staff', label: 'Usuários', icon: Users, component: StaffTab },
   { id: 'clients', label: 'Clientes', icon: Store, component: ClientsTab },
   { id: 'audit', label: 'Auditoria', icon: ScrollText, component: AuditLogTab },
 ];

@@ -46,7 +46,7 @@ export default function ClientsTab() {
   const openEdit = (r) => {
     setEditing(r);
     setEditForm({
-      restaurant_name: r.restaurant_name || '', cnpj: r.cnpj || '', contact_number: r.contact_number || '',
+      account_name: r.account_name || '', restaurant_name: r.restaurant_name || '', cnpj: r.cnpj || '', contact_number: r.contact_number || '',
       street: r.street || '', neighborhood: r.neighborhood || '', city: r.city || '', state: r.state || '', zip_code: r.zip_code || '',
     });
   };
@@ -97,8 +97,10 @@ export default function ClientsTab() {
                   <Store className="w-5 h-5 text-emerald-600" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-900 truncate">{r.account_name || profile?.full_name || 'Cliente'}</p>
-                  <p className="text-xs text-slate-500 truncate">{r.restaurant_name}</p>
+                  <p className="font-semibold text-slate-900 truncate">
+                    {r.account_name || profile?.full_name || profile?.email || 'Cliente sem nome'}
+                  </p>
+                  <p className="text-xs text-slate-500 truncate">tem o restaurante <span className="font-medium">{r.restaurant_name}</span></p>
                   <p className="text-xs text-slate-400">Desde {formatDate(r.created_date)}</p>
                 </div>
               </div>
@@ -133,6 +135,15 @@ export default function ClientsTab() {
             <DialogTitle>Editar Cliente</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSave} className="space-y-3">
+            {editing && profilesByUser[editing.user_id]?.email && (
+              <p className="text-xs text-slate-400 flex items-center gap-1.5 -mt-1">
+                <Mail className="w-3.5 h-3.5" /> {profilesByUser[editing.user_id].email}
+              </p>
+            )}
+            <div>
+              <Label>Nome do Cliente *</Label>
+              <Input required value={editForm.account_name || ''} onChange={e => setEditForm({ ...editForm, account_name: e.target.value })} className="mt-1" placeholder="Nome de quem está cadastrado" />
+            </div>
             <div>
               <Label>Nome do Restaurante *</Label>
               <Input required value={editForm.restaurant_name || ''} onChange={e => setEditForm({ ...editForm, restaurant_name: e.target.value })} className="mt-1" />

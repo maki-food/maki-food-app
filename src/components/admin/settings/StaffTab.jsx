@@ -104,23 +104,37 @@ export default function StaffTab() {
     } catch {}
   };
 
+  const [filter, setFilter] = useState('all'); // 'all' | 'staff' | 'clients'
+
   if (loading) {
     return <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>;
   }
 
   const staffUsers = users.filter(u => u.role === 'admin' || u.role === 'seller' || u.role === 'deliverer');
+  const clientUsers = users.filter(u => u.role === 'user' || !u.role);
+  const visibleUsers = filter === 'staff' ? staffUsers : filter === 'clients' ? clientUsers : users;
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-sm text-slate-500">{staffUsers.length} membro(s) da equipe</p>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div className="flex items-center gap-2 bg-slate-100 rounded-full p-1">
+          <button onClick={() => setFilter('all')} className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${filter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>
+            Todos ({users.length})
+          </button>
+          <button onClick={() => setFilter('staff')} className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${filter === 'staff' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>
+            Equipe ({staffUsers.length})
+          </button>
+          <button onClick={() => setFilter('clients')} className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${filter === 'clients' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>
+            Clientes ({clientUsers.length})
+          </button>
+        </div>
         <Button onClick={() => setRegisterOpen(true)} size="sm" className="bg-emerald-600 hover:bg-emerald-700">
           <UserPlus className="w-4 h-4 mr-1" /> Cadastrar Funcionário
         </Button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {staffUsers.map(u => {
+        {visibleUsers.map(u => {
           const cfg = roleConfig[u.role] || roleConfig.user;
           const Icon = cfg.icon;
           return (

@@ -36,9 +36,12 @@ import { CartProvider } from '@/context/CartContext';
 import { SettingsProvider } from '@/context/SettingsContext';
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings } = useAuth();
+  const { isLoadingAuth, isLoadingPublicSettings, authChecked } = useAuth();
 
-  if (isLoadingPublicSettings || isLoadingAuth) {
+  // Só mostra a tela de carregamento na primeiríssima checagem — nunca mais
+  // depois disso (evita reiniciar páginas, como no fluxo de recuperação de
+  // senha, toda vez que o app rechecar a sessão em segundo plano)
+  if (!authChecked && (isLoadingPublicSettings || isLoadingAuth)) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
