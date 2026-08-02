@@ -56,7 +56,8 @@ export default function Purchases() {
   const now = new Date();
   const parsePurchaseDate = (value) => {
     if (!value) return null;
-    const [year, month, day] = String(value).slice(0, 10).split('-').map(Number);
+    const iso = String(value).slice(0, 10);
+    const [year, month, day] = iso.split('-').map(Number);
     if (!year || !month || !day) return null;
     return new Date(year, month - 1, day);
   };

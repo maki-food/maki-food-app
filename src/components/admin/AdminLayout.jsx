@@ -5,7 +5,7 @@ import { useSettings } from '@/context/SettingsContext';
 import { formatBRL } from '@/lib/format';
 import { toast } from '@/components/ui/use-toast';
 import Sidebar from './Sidebar';
-import { Menu, Bell, X } from 'lucide-react';
+import { Menu, Bell, X, LogOut } from 'lucide-react';
 
 const adminRoles = ['admin', 'seller', 'deliverer'];
 
@@ -137,15 +137,37 @@ export default function AdminLayout() {
     return <Navigate to="/admin/entregas" replace />;
   }
 
+  const handleLogout = () => {
+    const cartBackup = localStorage.getItem('cart');
+    localStorage.clear();
+    sessionStorage.clear();
+    if (cartBackup) localStorage.setItem('cart', cartBackup);
+    window.location.href = '/login';
+  };
+
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} userRole={user.role} />
-      <div className="lg:ml-64">
-        <header className="lg:hidden sticky top-0 z-30 bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3">
-          <button onClick={() => setSidebarOpen(true)}>
-            <Menu className="w-5 h-5" />
+      {user.role !== 'deliverer' && (
+        <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} userRole={user.role} />
+      )}
+      <div className={user.role === 'deliverer' ? '' : 'lg:ml-64'}>
+        <header className="sticky top-0 z-30 bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
+          {user.role === 'deliverer' ? (
+            <div className="flex items-center gap-3">
+              <span className="font-bold text-slate-900">ENTREGADOR MAKI FOOD</span>
+            </div>
+          ) : (
+            <>
+              <button onClick={() => setSidebarOpen(true)} className="lg:hidden">
+                <Menu className="w-5 h-5" />
+              </button>
+              <span className="font-bold">{settings?.app_name || 'SushiPro'}</span>
+            </>
+          )}
+          <button onClick={handleLogout} className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900">
+            <LogOut className="w-4 h-4" />
+            <span>Sair</span>
           </button>
-          <span className="font-bold">{settings?.app_name || 'SushiPro'}</span>
         </header>
         <main className="p-4 lg:p-8">
           <Outlet />

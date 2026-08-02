@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/supabaseClient';
 import { formatBRL, formatDate, printOrder } from '@/lib/format';
 import { useSettings } from '@/context/SettingsContext';
@@ -18,8 +18,13 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
   const [photoViewOpen, setPhotoViewOpen] = useState(false);
   const [products, setProducts] = useState([]);
   const [selectedDeliverer, setSelectedDeliverer] = useState(order.deliverer_id || 'none');
+  const originalItemsRef = useRef((order.items || []).map(item => ({ ...item })));
 
-  useEffect(() => { setItems(order.items || []); }, [order.items]);
+  useEffect(() => {
+    const nextItems = (order.items || []).map(item => ({ ...item }));
+    setItems(nextItems);
+    originalItemsRef.current = nextItems;
+  }, [order.items]);
   useEffect(() => { setSelectedDeliverer(order.deliverer_id || 'none'); }, [order.deliverer_id]);
 
   useEffect(() => {
@@ -29,25 +34,150 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
     base44.entities.Product.list().then(setProducts).catch(() => {});
   }, []);
 
+  const buildStockAdjustments = async (previousItems, nextItems) => {
+    const oldItems = Array.isArray(previousItems) ? previousItems : [];
+    const newItems = Array.isArray(nextItems) ? nextItems : [];
+    const products = await base44.entities.Product.list().catch(() => []);
+    const productLookupByName = new Map(
+      products.map(product => [String(product.name || '').trim().toLowerCase(), product])
+    );
+
+    const aggregateItems = (sourceItems) => {
+      const map = new Map();
+      for (const item of sourceItems) {
+        const quantity = Number(item.weight_kg ?? item.quantity ?? 0);
+        if (!Number.isFinite(quantity) || quantity <= 0) continue;
+
+        const key = item.product_id
+          ? `id:${item.product_id}`
+          : `name:${String(item.product_name || '').trim().toLowerCase()}|${item.variant_name || ''}|${item.barcode || ''}`;
+
+        const existing = map.get(key) || {
+          productId: item.product_id || null,
+          productName: item.product_name || '',
+          quantity: 0,
+        };
+
+        existing.quantity += quantity;
+        map.set(key, existing);
+      }
+      return map;
+    };
+
+    const oldMap = aggregateItems(oldItems);
+    const newMap = aggregateItems(newItems);
+    const allKeys = [...new Set([...oldMap.keys(), ...newMap.keys()])];
+
+    return allKeys.reduce((acc, key) => {
+      const oldQty = oldMap.get(key)?.quantity || 0;
+      const newQty = newMap.get(key)?.quantity || 0;
+      const delta = oldQty - newQty;
+      if (delta === 0) return acc;
+
+      let productId = oldMap.get(key)?.productId || newMap.get(key)?.productId || null;
+      if (!productId) {
+        const match = productLookupByName.get(String(oldMap.get(key)?.productName || newMap.get(key)?.productName || '').trim().toLowerCase());
+        productId = match?.id || null;
+      }
+
+      if (productId) {
+        acc.push({ productId, delta });
+      }
+
+      return acc;
+    }, []);
+  };
+
+  const getItemProduct = (item) => {
+    if (!item) return null;
+    if (item.product_id) {
+      return products.find(p => p.id === item.product_id) || null;
+    }
+
+    const normalizedName = String(item.product_name || '').trim().toLowerCase();
+    return products.find(p => String(p.name || '').trim().toLowerCase() === normalizedName) || null;
+  };
+
+  const getItemStockLimit = (item) => {
+    const product = getItemProduct(item);
+    const stock = Number(product?.stock_quantity || 0);
+    return Number.isFinite(stock) ? Math.max(0, stock) : 0;
+  };
+
+  const applyQuantityChange = (idx, nextQuantity) => {
+    const currentItem = items[idx];
+    if (!currentItem) return;
+
+    const currentQty = Number(currentItem.quantity) || 0;
+    const normalizedNextQty = Math.max(0, Number(nextQuantity) || 0);
+
+    if (normalizedNextQty === currentQty) return;
+
+    const stockLimit = getItemStockLimit(currentItem);
+    if (normalizedNextQty > stockLimit) {
+      return;
+    }
+
+    setItems(prev => prev.reduce((acc, it, i) => {
+      if (i === idx) {
+        if (normalizedNextQty > 0) {
+          acc.push({ ...it, quantity: normalizedNextQty });
+        }
+        return acc;
+      }
+
+      acc.push(it);
+      return acc;
+    }, []));
+  };
+
   const saveItems = async () => {
     const numericItems = items.map(i => ({ ...i, quantity: parseFloat(i.quantity) || 0 }));
     const subtotal = numericItems.reduce((s, i) => s + (i.price || 0) * i.quantity, 0);
     const total = subtotal + (order.shipping_fee || 0);
-    await base44.entities.Order.update(order.id, { items: numericItems, total });
-    await logAction('Itens do Pedido Editados', `${order.restaurant_name} - ${numericItems.length} itens`);
+    const optimisticItems = numericItems.map(item => ({ ...item }));
+    const previousItems = originalItemsRef.current.map(item => ({ ...item }));
+
+    setItems(optimisticItems);
+    originalItemsRef.current = optimisticItems;
     setEditing(false);
-    onUpdate?.();
+
+    try {
+      const adjustments = await buildStockAdjustments(previousItems, optimisticItems);
+      const appliedAdjustments = [];
+
+      for (const adjustment of adjustments) {
+        await base44.stock.adjustProductStock({ productId: adjustment.productId, delta: adjustment.delta });
+        appliedAdjustments.push(adjustment);
+      }
+
+      await base44.entities.Order.update(order.id, { items: optimisticItems, total });
+      await logAction('Itens do Pedido Editados', `${order.restaurant_name} - ${optimisticItems.length} itens`);
+      onUpdate?.();
+    } catch (error) {
+      for (const adjustment of [...appliedAdjustments].reverse()) {
+        try {
+          await base44.stock.adjustProductStock({ productId: adjustment.productId, delta: -adjustment.delta });
+        } catch (rollbackError) {
+          console.error('Erro ao reverter estoque após falha na edição do pedido:', rollbackError);
+        }
+      }
+      setItems(previousItems);
+      originalItemsRef.current = previousItems;
+      setEditing(true);
+      console.error('Erro ao salvar itens do pedido:', error);
+      alert(error?.message || 'Não foi possível atualizar os itens do pedido e o estoque.');
+    }
   };
 
-  const deleteItem = async (idx) => {
-    const newItems = items.filter((_, i) => i !== idx);
-    setItems(newItems);
-    const numericItems = newItems.map(i => ({ ...i, quantity: parseFloat(i.quantity) || 0 }));
-    const subtotal = numericItems.reduce((s, i) => s + (i.price || 0) * i.quantity, 0);
-    const total = subtotal + (order.shipping_fee || 0);
-    await base44.entities.Order.update(order.id, { items: numericItems, total });
-    await logAction('Item Removido do Pedido', `${order.restaurant_name} - ${items[idx]?.product_name}`);
-    onUpdate?.();
+  const cancelEditing = () => {
+    const restoredItems = originalItemsRef.current.map(item => ({ ...item }));
+    setItems(restoredItems);
+    setEditing(false);
+  };
+
+  const deleteItem = (idx) => {
+    setItems(prev => prev.filter((_, i) => i !== idx));
   };
 
   const changeStatus = async (status) => {
@@ -68,6 +198,18 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
         }
       }
     }
+
+    if (status !== 'Finalizado' && order.status === 'Finalizado') {
+      const prods = await base44.entities.Product.list();
+      for (const item of (order.items || [])) {
+        const product = prods.find(p => p.name === item.product_name);
+        if (!product) continue;
+        const restoreQty = (item.weight_kg != null && item.weight_kg !== '') ? parseFloat(item.weight_kg) : (parseFloat(item.quantity) || 0);
+        const nextStock = Math.max(0, Number(product.stock_quantity || 0) + restoreQty);
+        await base44.entities.Product.update(product.id, { stock_quantity: nextStock, available: nextStock > 0 }).catch(() => {});
+      }
+    }
+
     await base44.entities.Order.update(order.id, {
       status,
       ...(status === 'Finalizado' ? { delivery_completed_at: new Date().toISOString() } : {}),
@@ -166,17 +308,27 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
                     <td className="px-3 py-2">{item.product_name}{item.variant_name ? ` - ${item.variant_name}` : ''}</td>
                     <td className="px-3 py-2 text-center">
                       {editing ? (
-                        <div className="flex items-center gap-1 justify-center">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={item.quantity}
-                            onChange={e => {
-                              setItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: e.target.value } : it));
-                            }}
-                            className="w-16 text-center border border-slate-200 rounded px-1 py-0.5"
-                          />
-                          <span className="text-xs text-slate-400 whitespace-nowrap">{products.find(p => p.name === item.product_name)?.unit || ''}</span>
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => applyQuantityChange(idx, Math.max(0, Number(item.quantity || 0) - 1))}
+                            className="h-7 w-7 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                            disabled={(Number(item.quantity) || 0) <= 1}
+                          >
+                            −
+                          </button>
+                          <div className="flex flex-col items-center">
+                            <span className="text-sm font-semibold text-slate-800">{item.quantity}</span>
+                            <span className="text-[11px] text-slate-400 whitespace-nowrap">{products.find(p => p.name === item.product_name)?.unit || ''}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => applyQuantityChange(idx, (Number(item.quantity) || 0) + 1)}
+                            className="h-7 w-7 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                            disabled={(Number(item.quantity) || 0) >= getItemStockLimit(item)}
+                          >
+                            +
+                          </button>
                         </div>
                       ) : (
                         <span>{item.quantity} {products.find(p => p.name === item.product_name)?.unit || ''}</span>
@@ -278,12 +430,17 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
                 <Button onClick={saveItems} size="sm" className="bg-emerald-600 hover:bg-emerald-700 h-9">
                   <Check className="w-4 h-4 mr-1" /> Salvar Itens
                 </Button>
-                <Button onClick={() => { setEditing(false); setItems(order.items || []); }} variant="outline" size="sm" className="h-9">
+                <Button onClick={cancelEditing} variant="outline" size="sm" className="h-9">
                   <X className="w-4 h-4 mr-1" /> Cancelar
                 </Button>
               </>
             ) : (
-              <Button onClick={() => setEditing(true)} variant="outline" size="sm" className="h-9">
+              <Button onClick={() => {
+                const nextItems = (order.items || []).map(item => ({ ...item }));
+                originalItemsRef.current = nextItems;
+                setItems(nextItems);
+                setEditing(true);
+              }} variant="outline" size="sm" className="h-9">
                 <Pencil className="w-4 h-4 mr-1" /> Editar Itens
               </Button>
             )}

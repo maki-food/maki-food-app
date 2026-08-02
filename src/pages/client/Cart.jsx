@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/supabaseClient';
+import { base44, supabase } from '@/api/supabaseClient';
 import { useCart } from '@/context/CartContext';
 import { useSettings } from '@/context/SettingsContext';
 import { formatBRL } from '@/lib/format';
@@ -134,6 +134,15 @@ export default function Cart() {
       return;
     }
 
+    if (!checkoutForm.payment_method) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro',
+        description: 'Por favor, selecione uma forma de pagamento antes de finalizar o pedido.'
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
       const orderItems = items.map(i => ({
@@ -148,12 +157,19 @@ export default function Cart() {
         weight_kg: i.weight_kg || null,
       }));
 
-      // Valida estoque atual antes de criar o pedido
+      // Reduz o estoque de cada produto via RPC segura no banco antes de criar o pedido
       for (const item of orderItems) {
         if (!item.product_id) continue;
-        const product = await base44.entities.Product.get(item.product_id).catch(() => null);
-        const currentStock = Number(product?.stock_quantity ?? 0);
-        if (currentStock < item.quantity) {
+
+        const qtyToDeduct = Number(item.quantity || 0);
+        if (qtyToDeduct <= 0) continue;
+
+        const result = await base44.stock.decrementStock({
+          productId: item.product_id,
+          quantity: qtyToDeduct,
+        });
+
+        if (result === false) {
           throw new Error(`Estoque insuficiente para ${item.product_name}`);
         }
       }
@@ -173,26 +189,6 @@ export default function Cart() {
         total: grandTotal,
         shipping_fee: shippingFee,
       });
-
-      // Baixa o estoque imediatamente e atualiza a visibilidade do produto para o cliente
-      for (const item of orderItems) {
-        if (!item.product_id) continue;
-
-        const product = await base44.entities.Product.get(item.product_id).catch(() => null);
-        if (!product) continue;
-
-        const currentStock = Number(product.stock_quantity ?? 0);
-        const nextStock = Math.max(0, currentStock - item.quantity);
-        const updatePayload = { stock_quantity: nextStock, available: nextStock > 0 };
-
-        await base44.entities.Product.update(item.product_id, updatePayload).catch(() => {});
-
-        try {
-          await base44.stock.deductFefo({ productId: item.product_id, quantity: item.quantity });
-        } catch (stockErr) {
-          console.error('Erro ao deduzir estoque FEFO:', stockErr);
-        }
-      }
 
       await logAction('Pedido Criado', `${restaurant.restaurant_name} - ${formatBRL(grandTotal)} - Pedido #${createdOrder?.invoice_number || '-'}`);
 
@@ -334,7 +330,7 @@ export default function Cart() {
                       Total aproximado
                       <button type="button" title="Para produtos vendidos por peso, o valor final pode variar após a separação." onClick={() => setShowCostInfo(true)} className="text-slate-400 hover:text-emerald-600 lg:pointer-events-none"><Info className="h-3.5 w-3.5" /></button>
                     </span>
-                    <p className="text-xs text-slate-500">Valor aproximado do pedido. O total final pode ser ajustado ao preparar sua compra.</p>
+                    <p className="text-xs text-slate-500">Valor aproximado do pedido.Se sua compra tem algum produto vendido por peso O total final pode ser ajustado ao preparar sua compra.</p>
                   </div>
                   <span className="text-xl font-bold text-slate-900">{formatBRL(grandTotal)}</span>
                 </div>
@@ -439,7 +435,7 @@ export default function Cart() {
                   <div>
                     <Label>
                       <CreditCard className="w-3.5 h-3.5 inline mr-1" />
-                      Forma de Pagamento *
+                      Forma de Pagamento Na Entrega *
                     </Label>
                     <Select value={checkoutForm.payment_method} onValueChange={v => setCheckoutForm({ ...checkoutForm, payment_method: v })}>
                       <SelectTrigger className="mt-1"><SelectValue placeholder="Selecione..." /></SelectTrigger>

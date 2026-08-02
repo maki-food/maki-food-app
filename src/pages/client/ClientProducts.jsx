@@ -29,6 +29,50 @@ export default function ClientProducts() {
   const mobileBanners = settings?.mobile_banners?.length > 0 ? settings.mobile_banners : desktopBanners;
   const banners = isDesktop ? desktopBanners : mobileBanners;
 
+  const updateProductList = (event) => {
+    setProducts(prev => {
+      if (!event?.data) return prev;
+      const item = event.data;
+      if (event.type === 'create') return [item, ...prev];
+      if (event.type === 'update') return prev.map(p => p.id === item.id ? { ...p, ...item } : p);
+      if (event.type === 'delete') return prev.filter(p => p.id !== event.id);
+      return prev;
+    });
+  };
+
+  const updatePromotionList = (event) => {
+    setPromotions(prev => {
+      if (!event?.data) return prev;
+      const item = event.data;
+      if (event.type === 'create') return item.active ? [item, ...prev] : prev;
+      if (event.type === 'update') {
+        const updated = prev.map(p => p.id === item.id ? { ...p, ...item } : p);
+        if (item.active) return prev.some(p => p.id === item.id) ? updated : [item, ...prev];
+        return updated.filter(p => p.id !== item.id);
+      }
+      if (event.type === 'delete') return prev.filter(p => p.id !== event.id);
+      return prev;
+    });
+  };
+
+  const updateVariantList = (event) => {
+    setVariantsByProduct(prev => {
+      if (!event?.data) return prev;
+      const variant = event.data;
+      const next = { ...prev };
+      if (event.type === 'delete') {
+        next[variant.product_id] = (next[variant.product_id] || []).filter(v => v.id !== event.id);
+        return next;
+      }
+      const group = [...(next[variant.product_id] || [])];
+      const index = group.findIndex(v => v.id === variant.id);
+      if (index !== -1) group[index] = variant;
+      else group.push(variant);
+      next[variant.product_id] = group;
+      return next;
+    });
+  };
+
   const load = async () => {
     try {
       const [prods, promos, variants] = await Promise.all([
@@ -50,9 +94,9 @@ export default function ClientProducts() {
 
   useEffect(() => {
     load();
-    const unsubP = base44.entities.Product.subscribe(() => load());
-    const unsubPr = base44.entities.Promotion.subscribe(() => load());
-    const unsubV = base44.entities.ProductVariant.subscribe(() => load());
+    const unsubP = base44.entities.Product.subscribe(updateProductList);
+    const unsubPr = base44.entities.Promotion.subscribe(updatePromotionList);
+    const unsubV = base44.entities.ProductVariant.subscribe(updateVariantList);
     return () => { if (unsubP) unsubP(); if (unsubPr) unsubPr(); if (unsubV) unsubV(); };
   }, []);
 

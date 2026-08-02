@@ -69,8 +69,37 @@ export default function Orders() {
 
   const handleDelete = async (order) => {
     if (!confirm(`Excluir pedido de ${order.restaurant_name}?`)) return;
-    await base44.entities.Order.delete(order.id);
-    await logAction('Pedido Excluído', order.restaurant_name);
+
+    try {
+      const orderItems = Array.isArray(order.items) ? order.items : [];
+      const products = await base44.entities.Product.list().catch(() => []);
+      const productLookupByName = new Map(
+        products.map(product => [String(product.name || '').trim().toLowerCase(), product])
+      );
+
+      const appliedAdjustments = [];
+      for (const item of orderItems) {
+        const quantity = Number(item.weight_kg ?? item.quantity ?? 0);
+        if (!Number.isFinite(quantity) || quantity <= 0) continue;
+
+        let productId = item.product_id || null;
+        if (!productId) {
+          const match = productLookupByName.get(String(item.product_name || '').trim().toLowerCase());
+          productId = match?.id || null;
+        }
+
+        if (!productId) continue;
+
+        await base44.stock.adjustProductStock({ productId, delta: quantity });
+        appliedAdjustments.push({ productId, delta: quantity });
+      }
+
+      await base44.entities.Order.delete(order.id);
+      await logAction('Pedido Excluído', order.restaurant_name);
+    } catch (error) {
+      console.error('Erro ao excluir pedido e restaurar estoque:', error);
+      alert(error?.message || 'Não foi possível excluir o pedido e restaurar o estoque.');
+    }
   };
 
   const hasAdvancedFilter = dateStart || dateEnd || clientSearch || cnpjSearch || nfSearch;

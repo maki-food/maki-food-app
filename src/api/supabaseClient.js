@@ -86,7 +86,7 @@ function makeEntity(tableName) {
     },
 
     async get(id) {
-      const { data, error } = await supabase.from(tableName).select('*').eq('id', id).single();
+      const { data, error } = await supabase.from(tableName).select('*').eq('id', id).maybeSingle();
       throwIfError(error);
       return data;
     },
@@ -103,7 +103,7 @@ function makeEntity(tableName) {
         .update(payload)
         .eq('id', id)
         .select()
-        .single();
+        .maybeSingle();
       throwIfError(error);
       return data;
     },
@@ -359,12 +359,57 @@ const stock = {
   },
 
   // Baixa estoque automaticamente pelos lotes que vencem primeiro (FEFO).
-  // Retorna a quantidade que realmente foi baixada.
   async deductFefo({ productId, quantity }) {
     const { data, error } = await supabase.rpc('deduct_stock_fefo', {
       p_product_id: productId,
       p_quantity: quantity,
     });
+    if (error) {
+      console.error('Error in deductFefo:', error);
+      throw error;
+    }
+    return data;
+  },
+
+  async decrementStock({ productId, quantity }) {
+    const { data, error } = await supabase.rpc('decrement_product_stock', {
+      p_product_id: productId,
+      p_quantity: quantity,
+    });
+    if (error) {
+      console.error('Error in decrementStock:', error);
+      throw error;
+    }
+    return data;
+  },
+
+  async adjustProductStock({ productId, delta }) {
+    const normalizedDelta = Number(delta || 0);
+    if (!productId || !Number.isFinite(normalizedDelta) || normalizedDelta === 0) {
+      return null;
+    }
+
+    const { data: currentProduct, error: fetchError } = await supabase
+      .from('products')
+      .select('id, stock_quantity, available')
+      .eq('id', productId)
+      .maybeSingle();
+
+    throwIfError(fetchError);
+
+    if (!currentProduct) {
+      throw new Error(`Produto ${productId} não encontrado para ajustar o estoque.`);
+    }
+
+    const nextStock = Math.max(0, Number(currentProduct.stock_quantity || 0) + normalizedDelta);
+
+    const { data, error } = await supabase
+      .from('products')
+      .update({ stock_quantity: nextStock, available: nextStock > 0 })
+      .eq('id', productId)
+      .select()
+      .single();
+
     throwIfError(error);
     return data;
   },

@@ -16,9 +16,20 @@ export default function Products() {
     setLoading(false);
   };
 
+  const updateProductList = (event) => {
+    setProducts(prev => {
+      if (!event?.data) return prev;
+      const item = event.data;
+      if (event.type === 'create') return [item, ...prev];
+      if (event.type === 'update') return prev.map(p => p.id === item.id ? { ...p, ...item } : p);
+      if (event.type === 'delete') return prev.filter(p => p.id !== event.id);
+      return prev;
+    });
+  };
+
   useEffect(() => {
     load();
-    const unsub = base44.entities.Product.subscribe(() => load());
+    const unsub = base44.entities.Product.subscribe(updateProductList);
     return () => { if (unsub) unsub(); };
   }, []);
 
