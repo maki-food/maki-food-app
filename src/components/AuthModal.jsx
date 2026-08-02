@@ -18,6 +18,8 @@ export default function AuthModal({ open, onClose, onSuccess }) {
   const [cnpj, setCnpj] = useState('');
   const [contact, setContact] = useState('');
   const [street, setStreet] = useState('');
+  const [number, setNumber] = useState('');
+  const [complement, setComplement] = useState('');
   const [neighborhood, setNeighborhood] = useState('');
   const [city, setCity] = useState('');
   const [stateVal, setStateVal] = useState('');
@@ -69,12 +71,14 @@ export default function AuthModal({ open, onClose, onSuccess }) {
     setLoading(true); setError('');
     try {
       const user = await base44.auth.me();
-      const fullAddr = [street, neighborhood, city, stateVal, zipCode].filter(Boolean).join(', ');
+      const fullAddr = [street, number, complement, neighborhood, city, stateVal, zipCode].filter(Boolean).join(', ');
       await base44.entities.Restaurant.create({
         restaurant_name: restaurantName,
         cnpj,
         contact_number: contact,
         street,
+        number: number || null,
+        complement: complement || null,
         neighborhood,
         city,
         state: stateVal,
@@ -178,10 +182,10 @@ export default function AuthModal({ open, onClose, onSuccess }) {
         {step === 'profile' && (
           <form onSubmit={handleProfile} className="space-y-3">
             <div>
-              <Label>Nome do Restaurante *</Label>
+              <Label>Nome *</Label>
               <div className="relative mt-1">
                 <Store className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                <Input required value={restaurantName} onChange={e => setRestaurantName(e.target.value)} className="pl-9" placeholder="Restaurante Exemplo" />
+                <Input required value={restaurantName} onChange={e => setRestaurantName(e.target.value)} className="pl-9" placeholder="Seu nome ou o nome do restaurante" />
               </div>
             </div>
             <div>
@@ -208,6 +212,10 @@ export default function AuthModal({ open, onClose, onSuccess }) {
             <div>
               <Label>Rua *</Label>
               <Input required value={street} onChange={e => setStreet(e.target.value)} className="mt-1" placeholder="Rua / Avenida" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Input required value={number} onChange={e => setNumber(e.target.value)} placeholder="Número" className="mt-1" />
+              <Input value={complement} onChange={e => setComplement(e.target.value)} placeholder="Complemento" className="mt-1" />
             </div>
             <div>
               <Label>Bairro *</Label>

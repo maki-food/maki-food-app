@@ -37,6 +37,7 @@ export default function CatalogView() {
 
   const publishedProducts = products.filter(p => (p.price || 0) > 0);
   const promoMap = new Map(promotions.map(pr => [pr.product_id, pr]));
+  const showLoadingSpinner = loading && products.length === 0;
 
   let filtered = publishedProducts;
   if (isPromocoes) {
@@ -51,10 +52,6 @@ export default function CatalogView() {
   }
 
   const title = isPromocoes ? 'Promoções' : isNovos ? 'Novos Produtos' : (category || 'Todos os Produtos');
-
-  if (loading) {
-    return <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>;
-  }
 
   return (
     <div>
@@ -73,7 +70,9 @@ export default function CatalogView() {
         <Input placeholder="Buscar produtos..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
       </div>
 
-      {filtered.length === 0 ? (
+      {showLoadingSpinner ? (
+        <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>
+      ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-slate-400">
           <Package className="w-12 h-12 mx-auto mb-3" />
           <p className="font-medium">Nenhum produto encontrado</p>

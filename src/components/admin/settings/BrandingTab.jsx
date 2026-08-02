@@ -5,6 +5,7 @@ import { logAction } from '@/lib/audit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Loader2, Upload, Save, ImageIcon, Palette, Type, Plus, Trash2, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { optimizeImage } from '@/lib/imageUpload';
 
@@ -17,7 +18,7 @@ const ColorField = ({ label, value, onChange }) => (
 
 export default function BrandingTab() {
   const { settings, refresh } = useSettings();
-  const [form, setForm] = useState({ app_name: 'SushiPro', logo_url: '', hero_image_url: '', banners: [], desktop_banners: [], mobile_banners: [], banner_interval: 5, whatsapp_number: '', sidebar_bg: '#0f172a', primary_color: '#059669', page_bg: '#f8fafc', topbar_bg: '#ffffff', category_bar_bg: '#f8fafc', admin_text_color: '#ffffff', store_text_color: '#475569', expiration_threshold_days: 7 });
+  const [form, setForm] = useState({ app_name: 'SushiPro', logo_url: '', hero_image_url: '', banners: [], desktop_banners: [], mobile_banners: [], banner_interval: 5, whatsapp_number: '', sidebar_bg: '#0f172a', primary_color: '#059669', page_bg: '#f8fafc', topbar_bg: '#ffffff', category_bar_bg: '#f8fafc', admin_text_color: '#ffffff', store_text_color: '#475569', cart_card_bg: '#059669', cart_card_text: '#ffffff', cart_button_bg: '#ffffff', cart_button_text: '#047857', expiration_threshold_days: 7 });
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -39,6 +40,10 @@ export default function BrandingTab() {
         category_bar_bg: settings.category_bar_bg || '#f8fafc',
         admin_text_color: settings.admin_text_color || '#ffffff',
         store_text_color: settings.store_text_color || '#475569',
+        cart_card_bg: settings.cart_card_bg || '#059669',
+        cart_card_text: settings.cart_card_text || '#ffffff',
+        cart_button_bg: settings.cart_button_bg || '#ffffff',
+        cart_button_text: settings.cart_button_text || '#047857',
         expiration_threshold_days: settings.expiration_threshold_days || 7,
       });
     }
@@ -225,35 +230,59 @@ export default function BrandingTab() {
           <Palette className="w-4 h-4 text-slate-400" />
           <h3 className="font-semibold text-slate-900">Customização de Cores</h3>
         </div>
-        <div className="space-y-4">
-          <div>
-            <Label>Cor de Fundo da Barra Lateral</Label>
+        <div className="space-y-5">
+          <section className="rounded-lg border border-slate-100 p-4">
+            <h4 className="text-sm font-semibold text-slate-800">Painel Admin</h4>
+            <p className="mt-1 text-xs text-slate-400">Cores da navegação e dos textos da área de gestão.</p>
+            <div className="mt-4 space-y-4">
+            <div>
+            <Label>Fundo da Barra Lateral</Label>
             <div className="mt-1"><ColorField value={form.sidebar_bg} onChange={v => setForm({ ...form, sidebar_bg: v })} /></div>
+          </div>
+          <div>
+            <Label>Texto do Painel Admin</Label>
+            <div className="mt-1"><ColorField value={form.admin_text_color} onChange={v => setForm({ ...form, admin_text_color: v })} /></div>
           </div>
           <div>
             <Label>Cor Primária dos Botões</Label>
             <div className="mt-1"><ColorField value={form.primary_color} onChange={v => setForm({ ...form, primary_color: v })} /></div>
           </div>
+          </div>
+          </section>
+
+          <section className="rounded-lg border border-slate-100 p-4">
+            <h4 className="text-sm font-semibold text-slate-800">Loja do Cliente</h4>
+            <p className="mt-1 text-xs text-slate-400">Fundo, topo, categorias e textos vistos pelo cliente.</p>
+            <div className="mt-4 space-y-4">
           <div>
-            <Label>Cor de Fundo das Páginas</Label>
+            <Label>Fundo das Páginas</Label>
             <div className="mt-1"><ColorField value={form.page_bg} onChange={v => setForm({ ...form, page_bg: v })} /></div>
           </div>
           <div>
-            <Label>Cor da Barra Superior da Loja</Label>
+            <Label>Fundo do Topo da Loja</Label>
             <div className="mt-1"><ColorField value={form.topbar_bg} onChange={v => setForm({ ...form, topbar_bg: v })} /></div>
           </div>
           <div>
-            <Label>Cor da Barra de Categorias</Label>
+            <Label>Fundo da Barra de Categorias</Label>
             <div className="mt-1"><ColorField value={form.category_bar_bg} onChange={v => setForm({ ...form, category_bar_bg: v })} /></div>
           </div>
           <div>
-            <Label>Cor do Texto (Painel Admin)</Label>
-            <div className="mt-1"><ColorField value={form.admin_text_color} onChange={v => setForm({ ...form, admin_text_color: v })} /></div>
-          </div>
-          <div>
-            <Label>Cor do Texto (Loja)</Label>
+            <Label>Texto da Logo</Label>
             <div className="mt-1"><ColorField value={form.store_text_color} onChange={v => setForm({ ...form, store_text_color: v })} /></div>
           </div>
+          </div>
+          </section>
+
+          <section className="rounded-lg border border-slate-100 p-4">
+            <h4 className="text-sm font-semibold text-slate-800">Card Previa do Carrinho </h4>
+            <p className="mt-1 text-xs text-slate-400">Personalize o card inferior com unidades, preço estimado e acesso ao carrinho.</p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div><Label>Fundo do Card</Label><div className="mt-1"><ColorField value={form.cart_card_bg} onChange={v => setForm({ ...form, cart_card_bg: v })} /></div></div>
+              <div><Label>Texto do Card</Label><div className="mt-1"><ColorField value={form.cart_card_text} onChange={v => setForm({ ...form, cart_card_text: v })} /></div></div>
+              <div><Label>Fundo do Botão</Label><div className="mt-1"><ColorField value={form.cart_button_bg} onChange={v => setForm({ ...form, cart_button_bg: v })} /></div></div>
+              <div><Label>Texto do Botão</Label><div className="mt-1"><ColorField value={form.cart_button_text} onChange={v => setForm({ ...form, cart_button_text: v })} /></div></div>
+            </div>
+          </section>
         </div>
         <div className="mt-4 p-4 rounded-lg border border-slate-100" style={{ backgroundColor: form.page_bg }}>
           <p className="text-xs text-slate-400 mb-2">Pré-visualização</p>

@@ -3,6 +3,7 @@ import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import { base44 } from '@/api/supabaseClient';
 import { useSettings } from '@/context/SettingsContext';
 import { formatBRL } from '@/lib/format';
+import { toast } from '@/components/ui/use-toast';
 import Sidebar from './Sidebar';
 import { Menu, Bell, X } from 'lucide-react';
 
@@ -25,30 +26,94 @@ export default function AdminLayout() {
 
   useEffect(() => {
     if (!user) return;
+
+    const playSound = () => {
+      try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const createBell = (startTime, frequency) => {
+          const osc = audioContext.createOscillator();
+          const fmOsc = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          const filter = audioContext.createBiquadFilter();
+
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(frequency, startTime);
+          osc.frequency.exponentialRampToValueAtTime(frequency * 1.08, startTime + 0.12);
+
+          fmOsc.type = 'sine';
+          fmOsc.frequency.setValueAtTime(6, startTime);
+
+          filter.type = 'bandpass';
+          filter.frequency.setValueAtTime(frequency * 1.5, startTime);
+          filter.Q.setValueAtTime(12, startTime);
+
+          gainNode.gain.setValueAtTime(0.0001, startTime);
+          gainNode.gain.linearRampToValueAtTime(0.35, startTime + 0.02);
+          gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.5);
+
+          osc.connect(filter);
+          fmOsc.connect(osc.frequency);
+          filter.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+
+          osc.start(startTime);
+          fmOsc.start(startTime);
+          osc.stop(startTime + 0.5);
+          fmOsc.stop(startTime + 0.5);
+        };
+
+        const now = audioContext.currentTime;
+        createBell(now, 720);
+        createBell(now + 0.45, 880);
+      } catch {
+        // ignore audio failures on restricted browsers
+      }
+    };
+
     const unsub = base44.entities.Order.subscribe((event) => {
       if (event.type === 'create') {
         const o = event.data;
         const isDelivererAssigned = user.role === 'deliverer' && o.deliverer_id === user.id;
         const isAdmin = user.role === 'admin' || user.role === 'seller';
         if (isAdmin || isDelivererAssigned) {
-          setNotification({
-            title: isDelivererAssigned ? 'Nova Entrega Atribuída!' : 'Novo Pedido!',
-            message: `${o.restaurant_name} • ${formatBRL(o.total)}`,
-          });
-          setTimeout(() => setNotification(null), 6000);
+          const title = isDelivererAssigned ? 'Nova Entrega Atribuída!' : 'Novo Pedido!';
+          const description = `${o.restaurant_name} • ${formatBRL(o.total)}`;
+          setNotification({ title, message: description });
+          playSound();
+          setTimeout(() => setNotification(null), 10000);
         }
       }
       if (event.type === 'update' && user.role !== 'deliverer') {
         const o = event.data;
         if (o.delivery_status === 'Aceito' && o.deliverer_name) {
-          setNotification({ title: 'Entrega Aceita!', message: `${o.restaurant_name} — aceita por ${o.deliverer_name}` });
-          setTimeout(() => setNotification(null), 6000);
+          const title = 'Entrega Aceita!';
+          const description = `${o.restaurant_name} — aceita por ${o.deliverer_name}`;
+          setNotification({ title, message: description });
+          playSound();
+          setTimeout(() => setNotification(null), 10000);
         } else if (o.delivery_status === 'Saiu para Entrega') {
-          setNotification({ title: 'Saiu para Entrega!', message: `${o.restaurant_name} — ${o.deliverer_name || ''}` });
-          setTimeout(() => setNotification(null), 6000);
+          const title = 'Saiu para Entrega!';
+          const description = `${o.restaurant_name} — ${o.deliverer_name || ''}`;
+          setNotification({ title, message: description });
+          playSound();
+          setTimeout(() => setNotification(null), 10000);
         } else if (o.delivery_status === 'Finalizado' || o.status === 'Finalizado') {
-          setNotification({ title: 'Entrega Finalizada!', message: `${o.restaurant_name}` });
-          setTimeout(() => setNotification(null), 6000);
+          const title = 'Entrega Finalizada!';
+          const description = `${o.restaurant_name}`;
+          setNotification({ title, message: description });
+          playSound();
+          setTimeout(() => setNotification(null), 10000);
+        }
+      }
+      if (event.type === 'update' && user.role === 'deliverer') {
+        const wasAssignedToUser = event.previousData?.deliverer_id === user.id;
+        const isAssignedToUser = event.data?.deliverer_id === user.id;
+        if (isAssignedToUser && !wasAssignedToUser) {
+          const title = 'Você recebeu uma entrega!';
+          const description = `${event.data.restaurant_name} • ${formatBRL(event.data.total)}`;
+          setNotification({ title, message: description });
+          playSound();
+          setTimeout(() => setNotification(null), 10000);
         }
       }
     });

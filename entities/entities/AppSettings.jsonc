@@ -68,6 +68,19 @@
       "type": "string",
       "default": "#475569"
     },
+    "cart_card_bg": { "type": "string", "default": "#059669" },
+    "cart_card_text": { "type": "string", "default": "#ffffff" },
+    "cart_button_bg": { "type": "string", "default": "#ffffff" },
+    "cart_button_text": { "type": "string", "default": "#047857" },
+    "invoice_logo_url": {
+      "type": "string"
+    },
+    "invoice_header_text": {
+      "type": "string"
+    },
+    "invoice_footer_text": {
+      "type": "string"
+    },
     "expiration_threshold_days": {
       "type": "number",
       "default": 7

@@ -3,16 +3,27 @@ import { base44 } from '@/api/supabaseClient';
 import { formatBRL, formatDate } from '@/lib/format';
 import { logAction } from '@/lib/audit';
 import { Button } from '@/components/ui/button';
-import { Loader2, MapPin, CreditCard, Phone, Package, Camera, Truck, CheckCircle, Clock, Bike } from 'lucide-react';
+import { Loader2, MapPin, CreditCard, Phone, Package, Camera, Truck, CheckCircle, Clock, Bike, ExternalLink } from 'lucide-react';
 
 export default function Deliveries() {
   const [orders, setOrders] = useState([]);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(null);
+  const [completedOrders, setCompletedOrders] = useState([]);
+
+  const isToday = (date) => {
+    if (!date) return false;
+    const value = new Date(date);
+    const now = new Date();
+    return value.getFullYear() === now.getFullYear()
+      && value.getMonth() === now.getMonth()
+      && value.getDate() === now.getDate();
+  };
 
   useEffect(() => {
     let unsub;
+    let syncTimer;
     let active = true;
     base44.auth.me().then(u => {
       if (!active) return;
@@ -21,13 +32,27 @@ export default function Deliveries() {
         try {
           const all = await base44.entities.Order.list('-created_date', 200);
           if (!active) return;
-          setOrders(all.filter(o => o.deliverer_id === u.id && o.status !== 'Finalizado'));
+          const mine = all.filter(o => o.deliverer_id === u.id);
+          setOrders(mine.filter(o => o.status !== 'Finalizado'));
+          setCompletedOrders(mine.filter(o => o.status === 'Finalizado' && isToday(o.delivery_completed_at || o.updated_date || o.created_date)));
         } catch {}
         if (active) setLoading(false);
       };
       load();
+      // Mantém a lista consistente mesmo enquanto o canal Realtime reconecta.
+      // O evento Realtime continua responsável pela atualização instantânea.
+      syncTimer = setInterval(load, 1000);
       unsub = base44.entities.Order.subscribe((event) => {
         if (!active) return;
+        if (event.type === 'refresh') {
+          load();
+          return;
+        }
+        if (event.type === 'update' && event.data.deliverer_id === u.id && event.data.status === 'Finalizado') {
+          setOrders(prev => prev.filter(o => o.id !== event.data.id));
+          setCompletedOrders(prev => [event.data, ...prev.filter(o => o.id !== event.data.id)].filter(o => isToday(o.delivery_completed_at || o.updated_date || o.created_date)));
+          return;
+        }
         setOrders(prev => {
           if (event.type === 'create') {
             if (event.data.deliverer_id === u.id && event.data.status !== 'Finalizado' && !prev.some(o => o.id === event.data.id)) return [event.data, ...prev];
@@ -35,20 +60,23 @@ export default function Deliveries() {
           }
           if (event.type === 'update') {
             if (event.data.deliverer_id !== u.id || event.data.status === 'Finalizado') return prev.filter(o => o.id !== event.data.id);
+            const alreadyListed = prev.some(o => o.id === event.data.id);
+            if (!alreadyListed) return [event.data, ...prev];
             return prev.map(o => o.id === event.data.id ? { ...o, ...event.data } : o);
           }
           if (event.type === 'delete') return prev.filter(o => o.id !== event.id);
           return prev;
         });
+        if (event.type === 'delete') setCompletedOrders(prev => prev.filter(o => o.id !== event.id));
       });
     }).catch(() => { if (active) setLoading(false); });
-    return () => { active = false; if (unsub) unsub(); };
+    return () => { active = false; clearInterval(syncTimer); if (unsub) unsub(); };
   }, []);
 
   const updateDeliveryStatus = async (order, newStatus) => {
     const updates = { delivery_status: newStatus };
     if (newStatus === 'Aceito') {
-      // keep order status as is
+      updates.status = 'Com Entregador';
     } else if (newStatus === 'Saiu para Entrega') {
       updates.status = 'Saiu para Entrega';
     } else if (newStatus === 'Finalizado') {
@@ -57,6 +85,7 @@ export default function Deliveries() {
         return;
       }
       updates.status = 'Finalizado';
+      updates.delivery_completed_at = new Date().toISOString();
     }
     await base44.entities.Order.update(order.id, updates);
     await logAction('Entrega Atualizada', `${order.restaurant_name}: ${newStatus}`);
@@ -122,7 +151,17 @@ export default function Deliveries() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                     <div className="flex items-start gap-2 text-slate-600">
                       <MapPin className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
-                      <span>{order.delivery_address}</span>
+                      <div>
+                        <span>{order.delivery_address}</span>
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.delivery_address || '')}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" /> Abrir no Google Maps
+                        </a>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 text-slate-600">
                       <Phone className="w-4 h-4 text-slate-400 flex-shrink-0" />
@@ -202,6 +241,64 @@ export default function Deliveries() {
           })}
         </div>
       )}
+
+      <section className="mt-8">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Entregas concluídas do dia</h2>
+            <p className="text-sm text-slate-500">{completedOrders.length} entrega(s) finalizada(s) hoje</p>
+          </div>
+        </div>
+
+        {completedOrders.length === 0 ? (
+          <div className="text-center py-8 text-slate-400 bg-white rounded-xl border border-slate-200">
+            <CheckCircle className="w-9 h-9 mx-auto mb-2" />
+            <p className="text-sm">Nenhuma entrega concluída hoje</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {completedOrders.map(order => (
+              <details key={order.id} className="group bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <summary className="flex cursor-pointer list-none items-center gap-3 p-4 hover:bg-slate-50">
+                  <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                  <span className="flex-1 min-w-0">
+                    <span className="block font-semibold text-slate-900 truncate">{order.restaurant_name}</span>
+                    <span className="block text-xs text-slate-500">{formatDate(order.delivery_completed_at || order.updated_date || order.created_date)} • {formatBRL(order.total)}</span>
+                  </span>
+                  <span className="text-xs font-medium text-emerald-600">Ver detalhes</span>
+                </summary>
+                <div className="border-t border-slate-100 p-4 space-y-3 text-sm">
+                  <div className="flex items-start gap-2 text-slate-600">
+                    <MapPin className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <span>{order.delivery_address}</span>
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.delivery_address || '')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> Abrir no Google Maps
+                      </a>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-600"><CreditCard className="w-4 h-4 text-slate-400" /> {order.payment_method}</div>
+                  <div className="rounded-lg bg-slate-50 p-3">
+                    <p className="mb-2 text-xs font-semibold text-slate-400">ITENS</p>
+                    {(order.items || []).map((item, index) => (
+                      <div key={index} className="flex justify-between text-sm">
+                        <span>{item.quantity}x {item.product_name}</span>
+                        <span className="text-slate-500">{formatBRL((item.price || 0) * item.quantity)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {order.delivery_photo_url && <img src={order.delivery_photo_url} alt="Comprovante" className="h-20 w-20 rounded-lg border border-slate-200 object-cover" />}
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

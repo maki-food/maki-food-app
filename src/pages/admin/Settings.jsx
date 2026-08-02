@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import BrandingTab from '@/components/admin/settings/BrandingTab';
+import InvoiceLayoutTab from '@/components/admin/settings/InvoiceLayoutTab';
 import CommercialTab from '@/components/admin/settings/CommercialTab';
 import StaffTab from '@/components/admin/settings/StaffTab';
 import ClientsTab from '@/components/admin/settings/ClientsTab';
 import AuditLogTab from '@/components/admin/settings/AuditLogTab';
-import { Palette, DollarSign, Users, Store, ScrollText } from 'lucide-react';
+import { Palette, FileText, DollarSign, Users, Store, ScrollText } from 'lucide-react';
 
 const tabs = [
   { id: 'branding', label: 'Aparência', icon: Palette, component: BrandingTab },
+  { id: 'invoice', label: 'Layout Nota Fiscal', icon: FileText, component: InvoiceLayoutTab },
   { id: 'commercial', label: 'Comercial', icon: DollarSign, component: CommercialTab },
   { id: 'staff', label: 'Usuários', icon: Users, component: StaffTab },
   { id: 'clients', label: 'Clientes', icon: Store, component: ClientsTab },

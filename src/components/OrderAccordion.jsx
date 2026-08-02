@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/supabaseClient';
 import { formatBRL, formatDate, printOrder } from '@/lib/format';
+import { useSettings } from '@/context/SettingsContext';
 import StatusBadge from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -16,8 +17,10 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
   const [deliverers, setDeliverers] = useState([]);
   const [photoViewOpen, setPhotoViewOpen] = useState(false);
   const [products, setProducts] = useState([]);
+  const [selectedDeliverer, setSelectedDeliverer] = useState(order.deliverer_id || 'none');
 
   useEffect(() => { setItems(order.items || []); }, [order.items]);
+  useEffect(() => { setSelectedDeliverer(order.deliverer_id || 'none'); }, [order.deliverer_id]);
 
   useEffect(() => {
     base44.entities.User.list().then(users => {
@@ -65,21 +68,32 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
         }
       }
     }
-    await base44.entities.Order.update(order.id, { status });
+    await base44.entities.Order.update(order.id, {
+      status,
+      ...(status === 'Finalizado' ? { delivery_completed_at: new Date().toISOString() } : {}),
+    });
     await logAction('Status do Pedido Alterado', `${order.restaurant_name}: ${order.status} → ${status}`);
     onUpdate?.();
   };
 
   const assignDeliverer = async (delivererId) => {
+    const previousDeliverer = selectedDeliverer;
+    setSelectedDeliverer(delivererId || 'none');
     const deliverer = deliverers.find(d => d.id === delivererId);
     const updates = {
       deliverer_id: delivererId,
       deliverer_name: deliverer?.full_name || deliverer?.email || '',
-      delivery_status: delivererId ? 'Pendente' : 'Pendente',
+      delivery_status: 'Pendente',
+      status: 'Em Separação',
     };
-    await base44.entities.Order.update(order.id, updates);
-    await logAction('Entregador Atribuído', `${order.restaurant_name}: ${deliverer?.full_name || deliverer?.email || 'Removido'}`);
-    onUpdate?.();
+    try {
+      await base44.entities.Order.update(order.id, updates);
+      await logAction('Entregador Atribuído', `${order.restaurant_name}: ${deliverer?.full_name || deliverer?.email || 'Removido'}`);
+      onUpdate?.();
+    } catch (error) {
+      setSelectedDeliverer(previousDeliverer);
+      alert(error?.message || 'Não foi possível atualizar o entregador.');
+    }
   };
 
   const handleUpload = async (e) => {
@@ -95,6 +109,8 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
   };
 
   const itemCount = (order.items || []).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
+
+  const { settings } = useSettings();
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-3">
@@ -167,7 +183,18 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
                       )}
                     </td>
                     <td className="px-3 py-2 text-slate-500 font-mono text-xs">{item.barcode || '-'}</td>
-                    <td className="px-3 py-2 text-right">{formatBRL((item.price || 0) * item.quantity)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {(() => {
+                        const f = formatBRL((item.price || 0) * item.quantity);
+                        const num = f.replace('R$', '').replace(/\u00A0/g, ' ').trim();
+                        return (
+                          <span className="inline-flex items-center justify-end w-full">
+                            <span className="text-slate-700 mr-1">R$</span>
+                            <span className="font-mono tabular-nums text-right" style={{minWidth: 64}}>{num}</span>
+                          </span>
+                        );
+                      })()}
+                    </td>
                     {editing && (
                       <td className="px-3 py-2 text-right">
                         <button onClick={() => deleteItem(idx)} className="text-red-500 hover:text-red-700">
@@ -182,11 +209,11 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
           </div>
 
           <div className="flex flex-wrap justify-end gap-x-6 gap-y-1 text-sm py-2 border-t border-slate-100">
-            <span className="text-slate-500">Subtotal: <strong className="text-slate-700">{formatBRL((editing ? items : order.items || []).reduce((s, i) => s + (i.price || 0) * (parseFloat(i.quantity) || 0), 0))}</strong></span>
+            <span className="text-slate-500">Subtotal: <strong className="text-slate-700"><span className="inline-flex items-center"><span className="text-slate-700 mr-1">R$</span><span className="font-mono tabular-nums" style={{minWidth:64}}>{formatBRL((editing ? items : order.items || []).reduce((s, i) => s + (i.price || 0) * (parseFloat(i.quantity) || 0), 0)).replace('R$', '').replace(/\u00A0/g, ' ').trim()}</span></span></strong></span>
             {(order.shipping_fee || 0) > 0 && (
-              <span className="text-slate-500">Frete: <strong className="text-slate-700">{formatBRL(order.shipping_fee)}</strong></span>
+              <span className="text-slate-500">Frete: <strong className="text-slate-700">{order.shipping_fee ? (<span className="inline-flex items-center"><span className="text-slate-700 mr-1">R$</span><span className="font-mono tabular-nums" style={{minWidth:64}}>{formatBRL(order.shipping_fee).replace('R$', '').replace(/\u00A0/g, ' ').trim()}</span></span>) : 'Grátis'}</strong></span>
             )}
-            <span className="text-slate-500">Total: <strong className="text-emerald-600">{formatBRL((editing ? items : order.items || []).reduce((s, i) => s + (i.price || 0) * (parseFloat(i.quantity) || 0), 0) + (order.shipping_fee || 0))}</strong></span>
+            <span className="text-slate-500">Total: <strong className="text-emerald-600"><span className="inline-flex items-center"><span className="text-slate-700 mr-1">R$</span><span className="font-mono tabular-nums" style={{minWidth:64}}>{formatBRL((editing ? items : order.items || []).reduce((s, i) => s + (i.price || 0) * (parseFloat(i.quantity) || 0), 0) + (order.shipping_fee || 0)).replace('R$', '').replace(/\u00A0/g, ' ').trim()}</span></span></strong></span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -200,6 +227,8 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="Pedido Emitido">Pedido Emitido</SelectItem>
+                <SelectItem value="Em Separação">Em Separação</SelectItem>
+                <SelectItem value="Com Entregador">Com Entregador</SelectItem>
                 <SelectItem value="Saiu para Entrega">Saiu para Entrega</SelectItem>
                 <SelectItem value="Finalizado">Finalizado</SelectItem>
               </SelectContent>
@@ -208,7 +237,7 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-slate-400 whitespace-nowrap">Entregador:</span>
               <Select
-                value={order.deliverer_id || 'none'}
+                value={selectedDeliverer}
                 onValueChange={(v) => assignDeliverer(v === 'none' ? '' : v)}
               >
                 <SelectTrigger className="w-44 h-9">
@@ -259,7 +288,7 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
               </Button>
             )}
 
-            <Button onClick={() => printOrder(order)} variant="outline" size="sm" className="h-9">
+            <Button onClick={() => printOrder(order, settings)} variant="outline" size="sm" className="h-9">
               <Printer className="w-4 h-4 mr-1" /> Imprimir 2 Vias
             </Button>
 

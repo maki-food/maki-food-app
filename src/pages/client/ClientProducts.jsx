@@ -64,13 +64,9 @@ export default function ClientProducts() {
   });
   const promoMap = new Map(activePromos.map(pr => [pr.product_id, pr]));
   const promoProducts = activePromos.map(pr => products.find(p => p.id === pr.product_id)).filter(Boolean);
-
-  if (loading) {
-    return <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>;
-  }
-
   const hasContent = newProducts.length > 0 || promoProducts.length > 0;
   const hasBanners = banners.length > 0;
+  const showLoadingSpinner = loading && !hasContent;
 
   return (
     <div>
@@ -91,28 +87,34 @@ export default function ClientProducts() {
         </div>
       ) : null}
 
-      <ProductCarousel
-        title="Promoções"
-        icon={Flame}
-        items={promoProducts}
-        variantsByProduct={variantsByProduct}
-        promoMap={promoMap}
-        seeMoreHref="/loja/produtos?promocoes=1"
-      />
+      {showLoadingSpinner ? (
+        <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>
+      ) : (
+        <> 
+          <ProductCarousel
+            title="Promoções"
+            icon={Flame}
+            items={promoProducts}
+            variantsByProduct={variantsByProduct}
+            promoMap={promoMap}
+            seeMoreHref="/loja/produtos?promocoes=1"
+          />
 
-      <ProductCarousel
-        title="Novos Produtos"
-        icon={Sparkles}
-        items={newProducts}
-        variantsByProduct={variantsByProduct}
-        seeMoreHref="/loja/produtos?novos=1"
-      />
+          <ProductCarousel
+            title="Novos Produtos"
+            icon={Sparkles}
+            items={newProducts}
+            variantsByProduct={variantsByProduct}
+            seeMoreHref="/loja/produtos?novos=1"
+          />
 
-      {!hasContent && (
-        <div className="text-center py-16 text-slate-400">
-          <Package className="w-12 h-12 mx-auto mb-3" />
-          <p className="font-medium">Nenhum produto disponível no momento</p>
-        </div>
+          {!hasContent && (
+            <div className="text-center py-16 text-slate-400">
+              <Package className="w-12 h-12 mx-auto mb-3" />
+              <p className="font-medium">Nenhum produto disponível no momento</p>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -7,10 +7,13 @@ import DateInput from '@/components/ui/date-input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { ClipboardList, Search, Filter, X } from 'lucide-react';
+import { getPeriodRange } from '@/lib/dateFilters';
 
 const filters = [
   { value: 'all', label: 'Todos' },
   { value: 'Pedido Emitido', label: 'Pedido Emitido' },
+  { value: 'Em Separação', label: 'Em Separação' },
+  { value: 'Com Entregador', label: 'Com Entregador' },
   { value: 'Saiu para Entrega', label: 'Saiu para Entrega' },
   { value: 'Finalizado', label: 'Finalizado' },
 ];
@@ -32,7 +35,7 @@ export default function Orders() {
   const [cnpjSearch, setCnpjSearch] = useState('');
   const [nfSearch, setNfSearch] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [dateFilter, setDateFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('today');
 
   const load = async () => {
     try { setOrders(await base44.entities.Order.list('-created_date', 200)); } catch {}
@@ -42,6 +45,10 @@ export default function Orders() {
   useEffect(() => {
     load();
     const unsub = base44.entities.Order.subscribe((event) => {
+      if (event.type === 'refresh') {
+        load();
+        return;
+      }
       setOrders(prev => {
         if (event.type === 'create' && !prev.some(o => o.id === event.data.id)) return [event.data, ...prev];
         if (event.type === 'update') return prev.map(o => o.id === event.data.id ? { ...o, ...event.data } : o);
@@ -75,17 +82,11 @@ export default function Orders() {
   let filtered = filter === 'all' ? orders : orders.filter(o => o.status === filter);
 
   if (dateFilter !== 'all') {
-    const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfWeek = new Date(startOfDay);
-    startOfWeek.setDate(startOfDay.getDate() - startOfDay.getDay());
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const { start, end } = getPeriodRange(dateFilter);
     filtered = filtered.filter(o => {
       const d = new Date(o.created_date);
-      if (dateFilter === 'today') return d >= startOfDay;
-      if (dateFilter === 'week') return d >= startOfWeek;
-      if (dateFilter === 'month') return d >= startOfMonth;
-      return true;
+      if (!start) return true;
+      return d >= start && d <= end;
     });
   }
 

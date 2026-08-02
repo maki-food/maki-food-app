@@ -2,6 +2,9 @@
   "name": "Order",
   "type": "object",
   "properties": {
+    "created_by_id": {
+      "type": "string"
+    },
     "restaurant_name": {
       "type": "string"
     },
@@ -15,6 +18,8 @@
       "type": "string",
       "enum": [
         "Pedido Emitido",
+        "Em Separação",
+        "Com Entregador",
         "Saiu para Entrega",
         "Finalizado"
       ],
@@ -37,6 +42,9 @@
       "items": {
         "type": "object",
         "properties": {
+          "product_id": {
+            "type": "string"
+          },
           "product_name": {
             "type": "string"
           },
@@ -48,6 +56,9 @@
           },
           "price": {
             "type": "number"
+          },
+          "image_url": {
+            "type": "string"
           }
         }
       }
@@ -78,6 +89,9 @@
         "Finalizado"
       ],
       "default": "Pendente"
+    },
+    "delivery_completed_at": {
+      "type": "string"
     }
   },
   "required": [

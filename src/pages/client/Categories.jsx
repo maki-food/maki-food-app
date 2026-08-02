@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { base44 } from '@/api/supabaseClient';
+import { useSearchParams } from 'react-router-dom';
 import { ChevronRight, ChevronDown, Layers } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
 
 export default function Categories() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const categoryQuery = searchParams.get('categoria') || '';
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(new Set());
@@ -18,6 +21,14 @@ export default function Categories() {
     const unsub = base44.entities.Category.subscribe(() => loadCategories());
     return () => { if (unsub) unsub(); };
   }, []);
+
+  useEffect(() => {
+    if (!categoryQuery || categories.length === 0) return;
+    const matched = categories.find(c => c.name === categoryQuery);
+    if (matched) {
+      setSelectedCategory(matched);
+    }
+  }, [categoryQuery, categories]);
 
   useEffect(() => {
     if (!selectedCategory) {
@@ -56,6 +67,7 @@ export default function Categories() {
 
   const parents = categories.filter(c => !c.parent_category_id);
   const childrenOf = (id) => categories.filter(c => c.parent_category_id === id);
+  const showLoadingCategories = loading && parents.length === 0;
 
   const toggleExpand = (id) => {
     setExpanded(prev => {
@@ -67,19 +79,21 @@ export default function Categories() {
 
   const handleSelectCategory = (cat) => {
     setSelectedCategory(cat);
+    setSearchParams({ categoria: cat.name });
   };
 
-  if (loading) {
-    return <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>;
-  }
   return (
     <div className="lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       <div className="lg:grid lg:grid-cols-[20rem_1fr] lg:gap-6 lg:h-full">
         {/* Left sidebar */}
         <aside className="w-full">
-          <div className="sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto pr-2">
+          <div className="sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto pr-2 no-scrollbar">
             <h1 className="text-2xl font-bold text-slate-900 mb-4">Categorias</h1>
-            {parents.length === 0 ? (
+            {showLoadingCategories ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" />
+              </div>
+            ) : parents.length === 0 ? (
               <div className="text-center py-16 text-slate-400">
                 <Layers className="w-12 h-12 mx-auto mb-3" />
                 <p className="font-medium">Nenhuma categoria cadastrada</p>
@@ -134,7 +148,7 @@ export default function Categories() {
         </aside>
 
         {/* Right content */}
-        <main className="mt-6 lg:mt-0 lg:h-full lg:overflow-y-auto lg:pr-2">
+        <main className="mt-6 lg:mt-0 lg:h-full lg:overflow-y-auto lg:pr-2 no-scrollbar">
           {selectedCategory ? (
             <>
               <div className="flex items-center justify-between mb-4">

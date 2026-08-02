@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import ScrollToTop from './components/ScrollToTop';
@@ -12,6 +12,7 @@ import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
 import AdminLayout from '@/components/admin/AdminLayout';
 import ClientLayout from '@/components/client/ClientLayout';
+import CartOverlay from '@/components/client/CartOverlay';
 import Dashboard from '@/pages/admin/Dashboard';
 import Products from '@/pages/admin/Products';
 import Stock from '@/pages/admin/Stock';
@@ -37,6 +38,7 @@ import { SettingsProvider } from '@/context/SettingsContext';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authChecked } = useAuth();
+  const location = useLocation();
 
   // Só mostra a tela de carregamento na primeiríssima checagem — nunca mais
   // depois disso (evita reiniciar páginas, como no fluxo de recuperação de
@@ -49,39 +51,50 @@ const AuthenticatedApp = () => {
     );
   }
 
+  const backgroundLocation = location.state && location.state.backgroundLocation ? location.state.backgroundLocation : null;
+
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/" element={<Home />} />
-      <Route element={<AdminLayout />}>
-        <Route path="/admin" element={<Dashboard />} />
-        <Route path="/admin/produtos" element={<Products />} />
-        <Route path="/admin/estoque" element={<Stock />} />
-        <Route path="/admin/compras" element={<Purchases />} />
-        <Route path="/admin/pedidos" element={<Orders />} />
-        <Route path="/admin/configuracoes" element={<Settings />} />
-        <Route path="/admin/categorias" element={<Categories />} />
-        <Route path="/admin/variacoes" element={<VariantTypes />} />
-        <Route path="/admin/promocoes" element={<Promotions />} />
-        <Route path="/admin/ficha-tecnica" element={<FichaTecnica />} />
-        <Route path="/admin/validades" element={<Expirations />} />
-        <Route path="/admin/entregas" element={<Deliveries />} />
-      </Route>
-      <Route element={<ClientLayout />}>
-        <Route path="/loja" element={<ClientProducts />} />
-        <Route path="/loja/produtos" element={<CatalogView />} />
-        <Route path="/loja/categorias" element={<ClientCategories />} />
-        <Route path="/loja/buscar" element={<SearchView />} />
-        <Route path="/loja/listas" element={<Lists />} />
-        <Route path="/loja/conta" element={<Account />} />
-        <Route path="/loja/carrinho" element={<Cart />} />
-        <Route path="/loja/pedidos" element={<MyOrders />} />
-      </Route>
-      <Route path="*" element={<PageNotFound />} />
-    </Routes>
+    <>
+      <Routes location={backgroundLocation || location}>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/" element={<Home />} />
+        <Route element={<AdminLayout />}>
+          <Route path="/admin" element={<Dashboard />} />
+          <Route path="/admin/produtos" element={<Products />} />
+          <Route path="/admin/estoque" element={<Stock />} />
+          <Route path="/admin/compras" element={<Purchases />} />
+          <Route path="/admin/pedidos" element={<Orders />} />
+          <Route path="/admin/configuracoes" element={<Settings />} />
+          <Route path="/admin/categorias" element={<Categories />} />
+          <Route path="/admin/variacoes" element={<VariantTypes />} />
+          <Route path="/admin/promocoes" element={<Promotions />} />
+          <Route path="/admin/ficha-tecnica" element={<FichaTecnica />} />
+          <Route path="/admin/validades" element={<Expirations />} />
+          <Route path="/admin/entregas" element={<Deliveries />} />
+        </Route>
+        <Route element={<ClientLayout />}>
+          <Route path="/loja" element={<ClientProducts />} />
+          <Route path="/loja/produtos" element={<CatalogView />} />
+          <Route path="/loja/categorias" element={<ClientCategories />} />
+          <Route path="/loja/buscar" element={<SearchView />} />
+          <Route path="/loja/listas" element={<Lists />} />
+          <Route path="/loja/conta" element={<Account />} />
+          <Route path="/loja/carrinho" element={<Cart />} />
+          <Route path="/loja/finalizar-pedido" element={<Cart />} />
+          <Route path="/loja/pedidos" element={<MyOrders />} />
+        </Route>
+        <Route path="*" element={<PageNotFound />} />
+      </Routes>
+
+      {backgroundLocation && (
+        <Routes>
+          <Route path="/loja/carrinho" element={<CartOverlay />} />
+        </Routes>
+      )}
+    </>
   );
 };
 

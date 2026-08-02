@@ -17,6 +17,7 @@ export default function ClientLayout() {
   const { count, total } = useCart();
   const { settings } = useSettings();
   const [search, setSearch] = useState('');
+  const isCartRoute = location.pathname === '/loja/carrinho';
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -67,6 +68,7 @@ export default function ClientLayout() {
 
             <Link
               to="/loja/carrinho"
+              state={{ backgroundLocation: location }}
               className="relative flex items-center gap-2 px-3 lg:px-4 h-10 rounded-full font-semibold text-sm flex-shrink-0"
               style={{ backgroundColor: (settings?.primary_color || '#059669') + '1a', color: settings?.primary_color || '#059669' }}
             >
@@ -93,7 +95,8 @@ export default function ClientLayout() {
         </form>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 lg:py-8">
+      {isCartRoute && <button type="button" aria-label="Fechar carrinho" onClick={() => navigate(-1)} className="fixed inset-0 z-[55] hidden bg-slate-950/35 lg:block" />}
+      <main className={`max-w-7xl mx-auto px-4 sm:px-6 py-6 lg:py-8 ${isCartRoute ? 'lg:fixed lg:right-0 lg:top-0 lg:z-[56] lg:mx-0 lg:h-full lg:w-[min(94vw,520px)] lg:max-w-none lg:overflow-y-auto lg:bg-white lg:shadow-2xl' : ''}`}>
         <Outlet />
       </main>
 

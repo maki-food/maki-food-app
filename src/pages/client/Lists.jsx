@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/supabaseClient';
+import { useCart } from '@/context/CartContext';
 import ProductCard from '@/components/ProductCard';
-import { Package, Plus, Trash2, Search, ChevronRight, X } from 'lucide-react';
+import { Package, Plus, Minus, Trash2, Search, ChevronRight, X, ShoppingCart, MoreVertical, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -10,7 +11,7 @@ import ListIcon from '@/components/client/ListIcon';
 
 export default function Lists() {
   const [user, setUser] = useState(undefined);
-  const [tab, setTab] = useState('essenciais'); // 'essenciais' | 'listas'
+  const [tab, setTab] = useState('listas'); // 'essenciais' | 'listas'
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -18,7 +19,15 @@ export default function Lists() {
   }, []);
 
   if (user === undefined) {
-    return <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>;
+    return (
+      <div>
+        <div className="flex items-center gap-2 bg-slate-100 rounded-full p-1 mb-6 max-w-sm">
+          <button className="flex-1 text-sm font-medium py-2 rounded-full text-slate-500">Meus essenciais</button>
+          <button className="flex-1 text-sm font-medium py-2 rounded-full text-slate-500">Listas</button>
+        </div>
+        <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>
+      </div>
+    );
   }
 
   if (!user) {
@@ -123,6 +132,7 @@ function MyLists({ userId }) {
   const [loading, setLoading] = useState(true);
   const [lists, setLists] = useState([]);
   const [counts, setCounts] = useState({});
+  const [previews, setPreviews] = useState({});
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -133,12 +143,22 @@ function MyLists({ userId }) {
     try {
       const rows = await base44.entities.List.filter({ user_id: userId }, '-created_date');
       setLists(rows);
-      const countMap = {};
-      for (const l of rows) {
+      const allProducts = await base44.entities.Product.list();
+      const itemGroups = await Promise.all(rows.map(async l => {
         const items = await base44.entities.ListItem.filter({ list_id: l.id });
-        countMap[l.id] = items.length;
-      }
+        return [l.id, items];
+      }));
+      const countMap = {};
+      const previewMap = {};
+      itemGroups.forEach(([listId, items]) => {
+        countMap[listId] = items.length;
+        previewMap[listId] = items
+          .map(item => allProducts.find(product => product.id === item.product_id))
+          .filter(Boolean)
+          .slice(0, 4);
+      });
       setCounts(countMap);
+      setPreviews(previewMap);
     } catch {}
     setLoading(false);
   };
@@ -188,21 +208,25 @@ function MyLists({ userId }) {
           <button onClick={() => setCreateOpen(true)} className="w-full flex items-center gap-2 justify-center border-2 border-dashed border-slate-200 rounded-2xl py-4 mb-4 text-emerald-600 font-medium hover:bg-emerald-50">
             <Plus className="w-4 h-4" /> Criar nova lista
           </button>
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {lists.map(l => (
-              <div key={l.id} className="flex items-center gap-3 px-4 py-4 hover:bg-slate-50">
-                <button onClick={() => setDetailList(l)} className="flex-1 flex items-center gap-3 text-left min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0">
-                    <ListIcon className="w-5 h-5 text-slate-400" />
+              <div key={l.id} className="group rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-emerald-200 hover:shadow-md">
+                <button onClick={() => setDetailList(l)} className="flex w-full items-center gap-4 text-left">
+                  <div className="grid h-24 w-24 flex-shrink-0 grid-cols-2 gap-1 overflow-hidden rounded-xl bg-slate-50 p-1">
+                    {(previews[l.id] || []).map(product => (
+                      <div key={product.id} className="flex items-center justify-center overflow-hidden rounded-md bg-white">
+                        {product.image_url ? <img src={product.image_url} alt="" className="h-full w-full object-contain" /> : <Package className="h-5 w-5 text-slate-300" />}
+                      </div>
+                    ))}
+                    {Array.from({ length: Math.max(0, 4 - (previews[l.id] || []).length) }).map((_, index) => (
+                      <div key={`empty-${index}`} className="rounded-md bg-slate-100" />
+                    ))}
                   </div>
-                  <div className="min-w-0">
-                    <p className="font-medium text-slate-900 truncate">{l.name}</p>
-                    <p className="text-xs text-slate-400">{counts[l.id] || 0} produto(s)</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-lg font-semibold text-slate-900">{l.name}</p>
+                    <p className="mt-1 text-sm text-slate-500">{counts[l.id] || 0} produto(s)</p>
                   </div>
-                </button>
-                <button onClick={() => setDetailList(l)} className="p-2 text-slate-300"><ChevronRight className="w-4 h-4" /></button>
-                <button onClick={() => setConfirmDelete(l)} className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 flex-shrink-0">
-                  <Trash2 className="w-4 h-4" />
+                  <ChevronRight className="h-5 w-5 flex-shrink-0 text-slate-300 group-hover:text-emerald-600" />
                 </button>
               </div>
             ))}
@@ -239,17 +263,28 @@ function MyLists({ userId }) {
 }
 
 function ListDetailDialog({ list, onClose }) {
+  const { addItem } = useCart();
   const [items, setItems] = useState([]);
   const [products, setProducts] = useState([]);
+  const [variantsByProduct, setVariantsByProduct] = useState({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [searching, setSearching] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [listName, setListName] = useState(list.name);
+  const [savingName, setSavingName] = useState(false);
 
   const load = async () => {
     try {
       const rows = await base44.entities.ListItem.filter({ list_id: list.id });
       const allProducts = await base44.entities.Product.list();
+      const allVariants = await base44.entities.ProductVariant.list().catch(() => []);
       setProducts(allProducts);
+      setVariantsByProduct(allVariants.reduce((groups, variant) => {
+        if (!groups[variant.product_id]) groups[variant.product_id] = [];
+        groups[variant.product_id].push(variant);
+        return groups;
+      }, {}));
       setItems(rows.map(r => ({ ...r, product: allProducts.find(p => p.id === r.product_id) })).filter(i => i.product));
     } catch {}
     setLoading(false);
@@ -276,45 +311,100 @@ function ListDetailDialog({ list, onClose }) {
     } catch {}
   };
 
+  const updateListQuantity = async (item, quantity) => {
+    if (quantity <= 0) return removeItem(item.id);
+    setItems(prev => prev.map(current => current.id === item.id ? { ...current, quantity } : current));
+    try {
+      await base44.entities.ListItem.update(item.id, { quantity });
+    } catch {
+      load();
+    }
+  };
+
+  const addAllToCart = () => {
+    items.forEach(item => addItem(item.product, item.quantity || 1));
+  };
+
+  const saveName = async () => {
+    if (!listName.trim()) return;
+    setSavingName(true);
+    try {
+      await base44.entities.List.update(list.id, { name: listName.trim() });
+      setEditingName(false);
+    } catch {}
+    setSavingName(false);
+  };
+
+  const deleteList = async () => {
+    if (!window.confirm(`Excluir a lista "${list.name}"?`)) return;
+    try {
+      await base44.entities.List.delete(list.id);
+      onClose();
+    } catch {}
+  };
+
+  const totalProducts = items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
+
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{list.name}</DialogTitle></DialogHeader>
+      <DialogContent className="h-[94vh] w-[min(96vw,1180px)] max-w-none overflow-y-auto bg-white p-0">
+        <div className="min-h-full px-5 pb-8 pt-4 sm:px-8 lg:px-12">
+          <button type="button" onClick={onClose} className="mb-5 inline-flex items-center gap-2 text-sm font-medium text-emerald-600 hover:text-emerald-700">
+            <ChevronRight className="h-4 w-4 rotate-180" /> Voltar às listas
+          </button>
 
-        <div className="relative">
-          <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Procurar produtos" className="pl-9" />
-        </div>
-        {results.length > 0 && (
-          <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100 max-h-40 overflow-y-auto">
-            {results.slice(0, 6).map(p => (
-              <button key={p.id} onClick={() => addProduct(p)} className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-slate-50 text-left">
-                {p.name}
-                <Plus className="w-4 h-4 text-emerald-600" />
-              </button>
-            ))}
-          </div>
-        )}
-
-        {loading ? (
-          <div className="flex justify-center py-8"><div className="w-6 h-6 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>
-        ) : items.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-6">Nenhum produto nessa lista ainda. Procura aí em cima pra adicionar.</p>
-        ) : (
-          <div className="space-y-2">
-            {items.map(i => (
-              <div key={i.id} className="flex items-center gap-3 bg-slate-50 rounded-xl px-3 py-2">
-                <div className="w-10 h-10 rounded-lg overflow-hidden bg-white flex-shrink-0 flex items-center justify-center">
-                  {i.product.image_url ? <img src={i.product.image_url} alt="" className="w-full h-full object-cover" /> : <Package className="w-4 h-4 text-slate-300" />}
-                </div>
-                <p className="flex-1 text-sm font-medium text-slate-900 truncate">{i.product.name}</p>
-                <button onClick={() => removeItem(i.id)} className="p-1.5 text-slate-400 hover:text-red-600">
-                  <X className="w-4 h-4" />
-                </button>
+          <div className="text-center">
+            {editingName ? (
+              <div className="mx-auto flex max-w-sm gap-2">
+                <Input value={listName} onChange={e => setListName(e.target.value)} autoFocus />
+                <Button onClick={saveName} disabled={savingName || !listName.trim()}>Salvar</Button>
               </div>
-            ))}
+            ) : <DialogTitle className="text-3xl font-bold text-slate-900">{listName}</DialogTitle>}
+            <p className="mt-2 text-base text-slate-500">{totalProducts} produtos</p>
           </div>
-        )}
+
+          <div className="mx-auto mt-8 flex max-w-2xl items-start justify-center gap-8 border-b border-slate-200 pb-7 sm:gap-20">
+            <button type="button" onClick={addAllToCart} disabled={items.length === 0} className="group flex w-36 flex-col items-center gap-2 text-center disabled:opacity-40">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full border border-slate-200 bg-white text-emerald-700 shadow-sm transition group-hover:border-emerald-300 group-hover:bg-emerald-50"><ShoppingCart className="h-7 w-7" /></span>
+              <span className="text-sm font-medium text-slate-600">Adicione tudo ao carrinho</span>
+            </button>
+            <button type="button" onClick={() => document.getElementById(`list-search-${list.id}`)?.focus()} className="group flex w-36 flex-col items-center gap-2 text-center">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition group-hover:border-emerald-300 group-hover:bg-emerald-50"><Plus className="h-7 w-7" /></span>
+              <span className="text-sm font-medium text-slate-600">Adicionar mais produtos</span>
+            </button>
+            <div className="relative flex w-36 flex-col items-center gap-2 text-center">
+              <button type="button" onClick={() => setOptionsOpen(value => !value)} className="group flex flex-col items-center gap-2">
+                <span className="flex h-14 w-14 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition group-hover:border-emerald-300 group-hover:bg-emerald-50"><MoreVertical className="h-7 w-7" /></span>
+                <span className="text-sm font-medium text-slate-600">Opções</span>
+              </button>
+              {optionsOpen && <div className="absolute right-0 top-[78px] z-20 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-xl">
+                <button type="button" onClick={() => { setEditingName(true); setOptionsOpen(false); }} className="flex w-full items-center gap-2 px-3 py-3 text-sm text-slate-600 hover:bg-slate-50"><Pencil className="h-4 w-4" /> Editar nome da lista</button>
+                <button type="button" onClick={deleteList} className="flex w-full items-center gap-2 border-t border-slate-100 px-3 py-3 text-sm text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /> Excluir lista</button>
+              </div>}
+            </div>
+          </div>
+
+          <div className="mx-auto mt-6 max-w-5xl">
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <Input id={`list-search-${list.id}`} value={search} onChange={e => setSearch(e.target.value)} placeholder="Adicionar mais produtos à lista" className="pl-9" />
+            </div>
+            {results.length > 0 && <div className="mt-2 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+              {results.slice(0, 6).map(product => <button key={product.id} onClick={() => addProduct(product)} className="flex w-full items-center justify-between border-b border-slate-100 px-4 py-3 text-left text-sm hover:bg-slate-50">{product.name}<Plus className="h-4 w-4 text-emerald-600" /></button>)}
+            </div>}
+          </div>
+
+          {loading ? <div className="flex justify-center py-16"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-emerald-600" /></div> : items.length === 0 ? <p className="py-16 text-center text-sm text-slate-400">Nenhum produto nessa lista ainda.</p> : <div className="mx-auto mt-7 grid max-w-5xl grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {items.map(item => <div key={item.id} className="min-w-0">
+              <ProductCard product={item.product} variants={variantsByProduct[item.product.id] || []} />
+              <div className="mt-2 flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-1.5">
+                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700"><span className="sm:hidden">{item.quantity || 1} und</span><span className="hidden sm:inline">{item.quantity || 1} {(Number(item.quantity) || 1) === 1 ? 'unidade' : 'unidades'}</span></span>
+                <button type="button" onClick={() => updateListQuantity(item, (Number(item.quantity) || 1) - 1)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100">{(Number(item.quantity) || 1) <= 1 ? <Trash2 className="h-4 w-4" /> : <Minus className="h-4 w-4" />}</button>
+                <button type="button" onClick={() => updateListQuantity(item, (Number(item.quantity) || 1) + 1)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200"><Plus className="h-4 w-4" /></button>
+              </div>
+            </div>)}
+          </div>}
+        </div>
       </DialogContent>
     </Dialog>
   );

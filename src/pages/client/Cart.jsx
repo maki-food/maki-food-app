@@ -3,7 +3,7 @@ import { base44 } from '@/api/supabaseClient';
 import { useCart } from '@/context/CartContext';
 import { useSettings } from '@/context/SettingsContext';
 import { formatBRL } from '@/lib/format';
-import { maskPhone, maskCEP, maskCNPJ } from '@/lib/masks';
+import { maskPhone, maskCNPJ, maskCEP } from '@/lib/masks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,26 +13,28 @@ import AuthModal from '@/components/AuthModal';
 import ProfileEditDialog from '@/components/client/ProfileEditDialog';
 import QuantitySelector from '@/components/QuantitySelector';
 import { Trash2, ShoppingBag, Loader2, CheckCircle, Store, MapPin, CreditCard, Package, Truck, X, MoreVertical, Info, Scale } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { logAction } from '@/lib/audit';
+import { useAuth } from '@/lib/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/use-toast';
 
 export default function Cart() {
   const { items, removeItem, updateQuantity, total, clearCart } = useCart();
   const { settings } = useSettings();
+  const { user: authUser, restaurantProfile } = useAuth();
   const paymentMethods = settings?.payment_methods || ['Pix', 'Dinheiro'];
   const SHIPPING_FEE = settings?.shipping_fee ?? 20;
   const FREE_SHIPPING_THRESHOLD = settings?.free_shipping_threshold ?? 200;
   const [user, setUser] = useState(null);
-  const [restaurant, setRestaurant] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [restaurant, setRestaurant] = useState(restaurantProfile || null);
+  const [loading, setLoading] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [profileForm, setProfileForm] = useState({
     restaurant_name: '', cnpj: '', contact_number: '',
-    street: '', neighborhood: '', city: '', state: '', zip_code: '',
+    street: '', number: '', complement: '', neighborhood: '', city: '', state: '', zip_code: '',
   });
   const [checkoutForm, setCheckoutForm] = useState({ delivery_address: '', payment_method: '', observations: '' });
   const [addresses, setAddresses] = useState([]);
@@ -44,34 +46,53 @@ export default function Cart() {
   const [newListName, setNewListName] = useState('');
   const [savingList, setSavingList] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const isCheckoutPage = location.pathname === '/loja/finalizar-pedido';
+  const isCartPage = location.pathname === '/loja/carrinho';
 
   const shippingFee = total >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
   const grandTotal = total + shippingFee;
 
-  const checkUser = async () => {
-    try {
-      const u = await base44.auth.me();
-      setUser(u);
-      const restaurants = await base44.entities.Restaurant.filter({ user_id: u.id });
-      if (restaurants.length > 0) {
-        const r = restaurants[0];
-        setRestaurant(r);
-        setProfileForm({
-          restaurant_name: r.restaurant_name || '', cnpj: r.cnpj || '', contact_number: r.contact_number || '',
-          street: r.street || '', neighborhood: r.neighborhood || '', city: r.city || '', state: r.state || '', zip_code: r.zip_code || '',
-        });
-        const fullAddr = [r.street, r.neighborhood, r.city, r.state, r.zip_code].filter(Boolean).join(', ');
-        setCheckoutForm(prev => ({ ...prev, delivery_address: fullAddr || r.address || '' }));
-      }
-      const extraAddrs = await base44.entities.Address.filter({ user_id: u.id }).catch(() => []);
-      setAddresses(extraAddrs || []);
-    } catch {}
-    setLoading(false);
+  const applyRestaurantProfile = (profile) => {
+    if (!profile) return;
+    setRestaurant(profile);
+    setProfileForm({
+      restaurant_name: profile.restaurant_name || '', cnpj: profile.cnpj || '', contact_number: profile.contact_number || '',
+      street: profile.street || '', number: profile.number || '', complement: profile.complement || '',
+      neighborhood: profile.neighborhood || '', city: profile.city || '', state: profile.state || '', zip_code: profile.zip_code || '',
+    });
+    const fullAddr = buildFullAddress(profile);
+    setCheckoutForm(prev => ({ ...prev, delivery_address: fullAddr }));
   };
 
-  useEffect(() => { checkUser(); }, []);
+  const checkUser = async () => {
+    try {
+      const currentUser = authUser || await base44.auth.me();
+      setUser(currentUser);
 
-  const buildFullAddress = (f) => [f.street, f.neighborhood, f.city, f.state, f.zip_code].filter(Boolean).join(', ');
+      if (restaurantProfile) {
+        applyRestaurantProfile(restaurantProfile);
+      } else {
+        const restaurants = await base44.entities.Restaurant.filter({ user_id: currentUser.id });
+        if (restaurants.length > 0) {
+          applyRestaurantProfile(restaurants[0]);
+        }
+      }
+
+      const extraAddrs = await base44.entities.Address.filter({ user_id: currentUser.id }).catch(() => []);
+      setAddresses(extraAddrs || []);
+    } catch {}
+  };
+
+  useEffect(() => {
+    checkUser();
+  }, [authUser, restaurantProfile]);
+
+  // Função auxiliar para formatar o endereço completo
+  const buildFullAddress = (f) => [f.street, f.number, f.complement, f.neighborhood, f.city, f.state, f.zip_code].filter(Boolean).join(', ');
+
+  const getSavedAddress = (address) => address?.address?.trim() || buildFullAddress(address);
+  const getAddressSummary = (address) => getSavedAddress(address).split(',').map(part => part.trim()).filter(Boolean).slice(0, 2).join(', ');
 
   const saveProfile = async (e) => {
     e.preventDefault();
@@ -103,14 +124,43 @@ export default function Cart() {
 
   const handleCheckout = async (e) => {
     e.preventDefault();
+
+    if (!checkoutForm.delivery_address) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro',
+        description: 'Por favor, selecione um endereço de entrega antes de finalizar o pedido.'
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
       const orderItems = items.map(i => ({
-        product_name: i.product_name || i.name, quantity: i.quantity, barcode: i.barcode || '', price: i.price,
-        variant_id: i.variant_id || null, variant_name: i.variant_name || null, weight_kg: i.weight_kg || null,
+        product_id: i.product_id || null,
+        product_name: i.product_name || i.name,
+        quantity: i.quantity,
+        barcode: i.barcode || '',
+        price: i.price,
+        image_url: i.image_url || null,
+        variant_id: i.variant_id || null,
+        variant_name: i.variant_name || null,
+        weight_kg: i.weight_kg || null,
       }));
+
+      // Valida estoque atual antes de criar o pedido
+      for (const item of orderItems) {
+        if (!item.product_id) continue;
+        const product = await base44.entities.Product.get(item.product_id).catch(() => null);
+        const currentStock = Number(product?.stock_quantity ?? 0);
+        if (currentStock < item.quantity) {
+          throw new Error(`Estoque insuficiente para ${item.product_name}`);
+        }
+      }
+
       const invoiceNumber = await generateInvoiceNumber();
-      await base44.entities.Order.create({
+      const createdOrder = await base44.entities.Order.create({
+        created_by_id: user.id,
         restaurant_name: restaurant.restaurant_name,
         restaurant_cnpj: restaurant.cnpj || '',
         invoice_number: invoiceNumber,
@@ -123,12 +173,42 @@ export default function Cart() {
         total: grandTotal,
         shipping_fee: shippingFee,
       });
-      await logAction('Pedido Criado', `${restaurant.restaurant_name} - ${formatBRL(grandTotal)}`);
+
+      // Baixa o estoque imediatamente e atualiza a visibilidade do produto para o cliente
+      for (const item of orderItems) {
+        if (!item.product_id) continue;
+
+        const product = await base44.entities.Product.get(item.product_id).catch(() => null);
+        if (!product) continue;
+
+        const currentStock = Number(product.stock_quantity ?? 0);
+        const nextStock = Math.max(0, currentStock - item.quantity);
+        const updatePayload = { stock_quantity: nextStock, available: nextStock > 0 };
+
+        await base44.entities.Product.update(item.product_id, updatePayload).catch(() => {});
+
+        try {
+          await base44.stock.deductFefo({ productId: item.product_id, quantity: item.quantity });
+        } catch (stockErr) {
+          console.error('Erro ao deduzir estoque FEFO:', stockErr);
+        }
+      }
+
+      await logAction('Pedido Criado', `${restaurant.restaurant_name} - ${formatBRL(grandTotal)} - Pedido #${createdOrder?.invoice_number || '-'}`);
+
       clearCart();
       setSuccess(true);
       setTimeout(() => navigate('/loja/pedidos'), 2500);
-    } catch {}
-    setSubmitting(false);
+    } catch (err) {
+      console.error('Error creating order:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao finalizar pedido',
+        description: err.message || 'Ocorreu um erro ao processar seu pedido. Por favor, tente novamente.'
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleClearCart = () => {
@@ -222,150 +302,200 @@ export default function Cart() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-3">
-          {items.map(item => (
-            <div key={item.product_id + (item.variant_id || '')} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-4">
-              <div className="w-14 h-14 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0 flex items-center justify-center">
-                {item.image_url ? <img src={item.image_url} alt="" className="w-full h-full object-cover" /> : <Package className="w-6 h-6 text-slate-300" />}
+      <div className={`grid min-w-0 grid-cols-1 gap-6 ${isCheckoutPage ? 'lg:grid-cols-[minmax(0,1fr)_360px] mx-auto max-w-6xl' : isCartPage ? 'grid-cols-1' : 'lg:grid-cols-3'}`}>
+        <div className={`${isCheckoutPage ? '' : isCartPage ? 'flex flex-col h-[calc(100vh-7rem)] overflow-hidden' : 'lg:col-span-2'} min-w-0 ${isCartPage ? '' : 'space-y-3'}`}>
+          <div className={`${isCartPage ? 'flex-1 overflow-y-auto space-y-3' : 'space-y-3'}`}>
+            {items.map(item => (
+              <div key={item.product_id + (item.variant_id || '')} className={`bg-white rounded-xl border border-slate-200 flex items-center gap-3 ${isCartPage ? 'flex-wrap p-3' : 'p-4 gap-4'}`}>
+                <div className="w-14 h-14 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0 flex items-center justify-center">
+                  {item.image_url ? <img src={item.image_url} alt="" className="w-full h-full object-cover" /> : <Package className="w-6 h-6 text-slate-300" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-slate-900 truncate">{item.name}</p>
+                  <p className="text-sm text-slate-500">{formatBRL(item.price)}{item.variant_name ? ` / ${item.variant_name}` : ''}</p>
+                </div>
+                <div className="flex items-center gap-2 ml-auto">
+                  <QuantitySelector value={item.quantity} onChange={v => updateQuantity(item.product_id, v, item.variant_id)} min={(item.unit && ['kg', 'g', 'litro', 'L', 'mL'].includes(item.unit)) ? 0.1 : 1} max={item.stock_quantity} step={(item.unit && ['kg', 'g', 'litro', 'L', 'mL'].includes(item.unit)) ? 0.5 : 1} size="sm" />
+                  <button onClick={() => removeItem(item.product_id, item.variant_id)} className="p-2 text-slate-400 hover:text-red-600">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className={`${isCartPage ? 'hidden' : 'hidden sm:block'} font-semibold text-slate-900 w-20 text-right`}>{formatBRL(item.price * item.quantity)}</p>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-slate-900 truncate">{item.name}</p>
-                <p className="text-sm text-slate-500">{formatBRL(item.price)}{item.variant_name ? ` / ${item.variant_name}` : ''}</p>
+            ))}
+          </div>
+
+          {isCartPage && (
+            <div className="border-t border-slate-200 bg-background/95 p-4 lg:bg-white lg:p-5 lg:shadow-sm">
+              <div className="max-w-3xl mx-auto">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-col gap-1">
+                    <span className="flex items-center gap-1 text-sm text-slate-500">
+                      Total aproximado
+                      <button type="button" title="Para produtos vendidos por peso, o valor final pode variar após a separação." onClick={() => setShowCostInfo(true)} className="text-slate-400 hover:text-emerald-600 lg:pointer-events-none"><Info className="h-3.5 w-3.5" /></button>
+                    </span>
+                    <p className="text-xs text-slate-500">Valor aproximado do pedido. O total final pode ser ajustado ao preparar sua compra.</p>
+                  </div>
+                  <span className="text-xl font-bold text-slate-900">{formatBRL(grandTotal)}</span>
+                </div>
+                <p className="mt-3 text-xs font-medium text-emerald-600">Frete grátis para compras superiores a {formatBRL(FREE_SHIPPING_THRESHOLD)}</p>
+                <Button onClick={() => navigate('/loja/finalizar-pedido')} className="mt-4 h-11 w-full bg-emerald-600 font-semibold hover:bg-emerald-700">Prosseguir com pedido</Button>
               </div>
-              <div className="flex items-center gap-3">
-                <QuantitySelector value={item.quantity} onChange={v => updateQuantity(item.product_id, v, item.variant_id)} min={(item.unit && ['kg', 'g', 'litro', 'L', 'mL'].includes(item.unit)) ? 0.1 : 1} max={item.stock_quantity} step={(item.unit && ['kg', 'g', 'litro', 'L', 'mL'].includes(item.unit)) ? 0.5 : 1} size="sm" />
-                <button onClick={() => removeItem(item.product_id, item.variant_id)} className="p-2 text-slate-400 hover:text-red-600">
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-              <p className="font-semibold text-slate-900 w-20 text-right hidden sm:block">{formatBRL(item.price * item.quantity)}</p>
             </div>
-          ))}
+          )}
         </div>
 
-        <div className="lg:col-span-1">
-          {!user ? (
-            <div className="bg-white rounded-xl border border-slate-200 p-5 text-center">
-              <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                <Store className="w-6 h-6 text-emerald-600" />
-              </div>
-              <h3 className="font-semibold text-slate-900 mb-1">Faça login para continuar</h3>
-              <p className="text-sm text-slate-500 mb-4">Você precisa estar logado para finalizar o pedido</p>
-              <Button onClick={() => setShowAuth(true)} className="w-full bg-emerald-600 hover:bg-emerald-700">
-                Entrar / Cadastrar
-              </Button>
-              <div className="mt-4 pt-4 border-t border-slate-100">
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-slate-500">Total</span>
-                  <span className="font-bold text-slate-900">{formatBRL(grandTotal)}</span>
+        {!isCartPage && (
+          <div className={`${isCheckoutPage ? '' : 'lg:col-span-1'} min-w-0`}>
+            {!isCheckoutPage ? (
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div className="p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex flex-col gap-1">
+                      <span className="flex items-center gap-1 text-sm text-slate-500">
+                        Total aproximado
+                        <button type="button" title="Para produtos vendidos por peso, o valor final pode variar após a separação." onClick={() => setShowCostInfo(true)} className="text-slate-400 hover:text-emerald-600 lg:pointer-events-none">
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                      <p className="text-xs text-slate-400">O preço pode variar de acordo com produtos vendidos por peso.</p>
+                    </div>
+                    <span className="text-xl font-bold text-slate-900">{formatBRL(grandTotal)}</span>
+                  </div>
+                  <p className="mt-3 text-xs font-medium text-emerald-600">Frete grátis para compras superiores a {formatBRL(FREE_SHIPPING_THRESHOLD)}</p>
+                  <Button onClick={() => navigate('/loja/finalizar-pedido')} className="mt-4 h-11 w-full bg-emerald-600 font-semibold hover:bg-emerald-700">
+                    Prosseguir com pedido
+                  </Button>
                 </div>
               </div>
-            </div>
-          ) : !restaurant ? (
-            <div className="bg-white rounded-xl border border-slate-200 p-5 text-center">
-              <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                <Store className="w-6 h-6 text-amber-600" />
+            ) : !user ? (
+              <div className="bg-white rounded-xl border border-slate-200 p-5 text-center">
+                <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Store className="w-6 h-6 text-emerald-600" />
+                </div>
+                <h3 className="font-semibold text-slate-900 mb-1">Faça login para continuar</h3>
+                <p className="text-sm text-slate-500 mb-4">Você precisa estar logado para finalizar o pedido</p>
+                <Button onClick={() => setShowAuth(true)} className="w-full bg-emerald-600 hover:bg-emerald-700">
+                  Entrar / Cadastrar
+                </Button>
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-slate-500">Total</span>
+                    <span className="font-bold text-slate-900">{formatBRL(grandTotal)}</span>
+                  </div>
+                </div>
               </div>
-              <h3 className="font-semibold text-slate-900 mb-1">Complete seu cadastro</h3>
-              <p className="text-sm text-slate-500 mb-4">Antes de concluir o pedido, precisamos dos dados do seu restaurante e do endereço de entrega.</p>
-              <Button onClick={() => setProfileDialogOpen(true)} className="w-full bg-emerald-600 hover:bg-emerald-700">
-                Preencher
-              </Button>
-            </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-slate-200 p-5 sticky top-20">
-              <h3 className="font-semibold text-slate-900 mb-4">Finalizar Pedido</h3>
-              <form onSubmit={handleCheckout} className="space-y-3">
-                {addresses.length > 0 && (
+            ) : !restaurant ? (
+              <div className="bg-white rounded-xl border border-slate-200 p-5 text-center">
+                <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Store className="w-6 h-6 text-amber-600" />
+                </div>
+                <h3 className="font-semibold text-slate-900 mb-1">Complete seu cadastro</h3>
+                <p className="text-sm text-slate-500 mb-4">Antes de concluir o pedido, precisamos dos dados do seu restaurante e do endereço de entrega.</p>
+                <Button onClick={() => setProfileDialogOpen(true)} className="w-full bg-emerald-600 hover:bg-emerald-700">
+                  Preencher
+                </Button>
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border border-slate-200 p-5 sticky top-20">
+                <h3 className="font-semibold text-slate-900 mb-4">Finalizar Pedido</h3>
+                <form onSubmit={handleCheckout} className="space-y-3">
                   <div>
-                    <Label><MapPin className="w-3.5 h-3.5 inline mr-1" />Qual endereço?</Label>
-                    <Select
-                      value={checkoutForm.delivery_address}
-                      onValueChange={v => setCheckoutForm({ ...checkoutForm, delivery_address: v })}
-                    >
-                      <SelectTrigger className="mt-1"><SelectValue placeholder="Selecione o endereço" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={[restaurant.street, restaurant.neighborhood, restaurant.city, restaurant.state, restaurant.zip_code].filter(Boolean).join(', ') || restaurant.address}>
-                          Endereço 1 — {restaurant.street || restaurant.address}
+                    <Label>
+                      <MapPin className="w-3.5 h-3.5 inline mr-1" />
+                      Endereco de entrega *
+                    </Label>
+                    <Select value={checkoutForm.delivery_address} onValueChange={v => setCheckoutForm({ ...checkoutForm, delivery_address: v })}>
+                      <SelectTrigger className="mt-1 h-11 min-w-0">
+                        <SelectValue placeholder="Selecione o endereco" />
+                      </SelectTrigger>
+                      <SelectContent className="w-[min(92vw,420px)] max-w-[calc(100vw-2rem)]">
+                        <SelectItem
+                          value={getSavedAddress(restaurant)}
+                          textValue={`Endereco 1 - ${getAddressSummary(restaurant)}`}
+                          className="items-start py-3"
+                        >
+                          <span className="flex min-w-0 flex-col gap-0.5 pr-2">
+                            <span className="font-medium">Endereco 1 (principal)</span>
+                            <span className="line-clamp-2 text-xs font-normal text-slate-500">{getSavedAddress(restaurant)}</span>
+                          </span>
                         </SelectItem>
                         {addresses.map(a => (
-                          <SelectItem key={a.id} value={[a.street, a.neighborhood, a.city, a.state, a.zip_code].filter(Boolean).join(', ')}>
-                            {a.label || 'Endereço 2'} — {a.street}
+                          <SelectItem
+                            key={a.id}
+                            value={getSavedAddress(a)}
+                            textValue={`${a.label || 'Endereco 2'} - ${getAddressSummary(a)}`}
+                            className="items-start py-3"
+                          >
+                            <span className="flex min-w-0 flex-col gap-0.5 pr-2">
+                              <span className="font-medium">{a.label || 'Endereco 2'}</span>
+                              <span className="line-clamp-2 text-xs font-normal text-slate-500">{getSavedAddress(a)}</span>
+                            </span>
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                )}
-                <div>
-                  <Label><MapPin className="w-3.5 h-3.5 inline mr-1" />Endereço de Entrega *</Label>
-                  <Textarea required value={checkoutForm.delivery_address} onChange={e => setCheckoutForm({ ...checkoutForm, delivery_address: e.target.value })} className="mt-1" rows={2} />
-                </div>
-                <div>
-                  <Label><CreditCard className="w-3.5 h-3.5 inline mr-1" />Forma de Pagamento *</Label>
-                  <Select value={checkoutForm.payment_method} onValueChange={v => setCheckoutForm({ ...checkoutForm, payment_method: v })}>
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                    <SelectContent>
-                      {paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Observações (opcional)</Label>
-                  <Textarea value={checkoutForm.observations} onChange={e => setCheckoutForm({ ...checkoutForm, observations: e.target.value })} className="mt-1" rows={2} placeholder="Ex: Entregar na portaria" />
-                </div>
-                <div className="pt-3 border-t border-slate-100 space-y-1">
-                  <div className="flex justify-between text-sm items-center">
-                    <span className="text-slate-500 flex items-center gap-1">
-                      Custo estimado
-                      <button type="button" onClick={() => setShowCostInfo(true)} className="text-slate-400 hover:text-emerald-600">
-                        <Info className="w-3.5 h-3.5" />
-                      </button>
-                    </span>
-                    <span className="text-slate-600">{formatBRL(total)}</span>
+                  <div>
+                    <Label>
+                      <CreditCard className="w-3.5 h-3.5 inline mr-1" />
+                      Forma de Pagamento *
+                    </Label>
+                    <Select value={checkoutForm.payment_method} onValueChange={v => setCheckoutForm({ ...checkoutForm, payment_method: v })}>
+                      <SelectTrigger className="mt-1"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                      <SelectContent>
+                        {paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500 flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Frete</span>
-                    <span className={shippingFee === 0 ? 'text-emerald-600 font-medium' : 'text-slate-600'}>
-                      {shippingFee === 0 ? 'GRÁTIS' : formatBRL(shippingFee)}
-                    </span>
+                  <div>
+                    <Label>Observacoes (opcional)</Label>
+                    <Textarea value={checkoutForm.observations} onChange={e => setCheckoutForm({ ...checkoutForm, observations: e.target.value })} className="mt-1" rows={2} placeholder="Ex: Entregar na portaria" />
                   </div>
-                  {shippingFee > 0 && total < FREE_SHIPPING_THRESHOLD && (
-                    <p className="text-xs text-amber-500">Faltam {formatBRL(FREE_SHIPPING_THRESHOLD - total)} para frete grátis!</p>
-                  )}
-                  <div className="flex justify-between pt-2">
-                    <span className="text-slate-500">Total</span>
-                    <span className="text-xl font-bold text-emerald-600">{formatBRL(grandTotal)}</span>
+                  <div className="pt-3 border-t border-slate-100 space-y-1">
+                    <div className="flex justify-between text-sm items-center">
+                      <span className="text-slate-500 flex items-center gap-1">
+                        Custo estimado
+                        <button type="button" onClick={() => setShowCostInfo(true)} className="text-slate-400 hover:text-emerald-600 lg:pointer-events-none">
+                          <Info className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
+                      <span className="text-slate-600">{formatBRL(total)}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 leading-relaxed lg:text-sm">
+                      Para produtos vendidos por peso, o valor será ajustado à quantidade servida. O valor final será cobrado após a separação do seu pedido.
+                    </p>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500 flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Frete</span>
+                      <span className={shippingFee === 0 ? 'text-emerald-600 font-medium' : 'text-slate-600'}>
+                        {shippingFee === 0 ? 'GRATIS' : formatBRL(shippingFee)}
+                      </span>
+                    </div>
+                    {shippingFee > 0 && total < FREE_SHIPPING_THRESHOLD && (
+                      <p className="text-xs text-amber-500">Faltam {formatBRL(FREE_SHIPPING_THRESHOLD - total)} para frete gratis!</p>
+                    )}
+                    <div className="flex justify-between pt-2">
+                      <span className="text-slate-500">Total</span>
+                      <span className="text-xl font-bold text-emerald-600">{formatBRL(grandTotal)}</span>
+                    </div>
+                    <Button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-700 mt-2">
+                      {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar Pedido'}
+                    </Button>
                   </div>
-                  <Button type="submit" disabled={submitting} className="w-full bg-emerald-600 hover:bg-emerald-700 mt-2">
-                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confira'}
-                  </Button>
-                </div>
-              </form>
-            </div>
-          )}
-        </div>
+                </form>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      <AuthModal
-        open={showAuth}
-        onClose={() => setShowAuth(false)}
-        onSuccess={() => window.location.reload()}
-      />
+      <AuthModal open={showAuth} onClose={() => setShowAuth(false)} onSuccess={() => window.location.reload()} />
 
-      <ProfileEditDialog
-        open={profileDialogOpen}
-        onClose={() => setProfileDialogOpen(false)}
-        user={user}
-        onSaved={checkUser}
-      />
+      <ProfileEditDialog open={profileDialogOpen} onClose={() => setProfileDialogOpen(false)} user={user} onSaved={checkUser} />
 
       <Dialog open={saveListOpen} onOpenChange={setSaveListOpen}>
         <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Salvar na lista</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Salvar na lista</DialogTitle></DialogHeader>
           <Label>Nome da lista</Label>
           <Input autoFocus value={newListName} onChange={e => setNewListName(e.target.value)} className="mt-1" placeholder="Ex: Compra de sempre" />
           <DialogFooter>
@@ -379,9 +509,7 @@ export default function Cart() {
 
       <Dialog open={confirmClear} onOpenChange={setConfirmClear}>
         <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Tem certeza de que quer esvaziar o seu carrinho?</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Tem certeza de que quer esvaziar o seu carrinho?</DialogTitle></DialogHeader>
           <DialogFooter className="flex gap-2">
             <Button variant="outline" onClick={() => setConfirmClear(false)} className="flex-1">Cancelar</Button>
             <Button onClick={handleClearCart} className="flex-1 bg-red-600 hover:bg-red-700">Esvaziar carrinho</Button>
@@ -395,12 +523,8 @@ export default function Cart() {
             <Scale className="w-8 h-8 text-emerald-600" />
           </div>
           <h3 className="font-bold text-slate-900 text-lg">Custo estimado</h3>
-          <p className="text-sm text-slate-500">
-            Para produtos vendidos por peso, o valor cobrado será ajustado à quantidade servida. O valor final será cobrado após a preparação do seu pedido.
-          </p>
-          <Button onClick={() => setShowCostInfo(false)} className="w-full bg-emerald-600 hover:bg-emerald-700 mt-2">
-            Entendido
-          </Button>
+          <p className="text-sm text-slate-500">Para produtos vendidos por peso, o valor cobrado sera ajustado a quantidade servida. O valor final sera cobrado apos a preparacao do seu pedido.</p>
+          <Button onClick={() => setShowCostInfo(false)} className="w-full bg-emerald-600 hover:bg-emerald-700 mt-2">Entendido</Button>
         </DialogContent>
       </Dialog>
     </div>

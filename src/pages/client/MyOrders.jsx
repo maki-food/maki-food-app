@@ -12,13 +12,21 @@ export default function MyOrders() {
   const [user, setUser] = useState(null);
   const [showAuth, setShowAuth] = useState(false);
   const [expanded, setExpanded] = useState(null);
+  const [selectedTab, setSelectedTab] = useState('active');
 
   const load = async () => {
     try {
       const u = await base44.auth.me();
       setUser(u);
-      const myOrders = await base44.entities.Order.filter({ created_by_id: u.id }, '-created_date');
-      setOrders(myOrders);
+      const restaurants = await base44.entities.Restaurant.filter({ user_id: u.id }).catch(() => []);
+      const restaurant = restaurants[0];
+      const allOrders = await base44.entities.Order.list('-created_date', 200);
+      const matchesCustomer = (order) => (
+        order.created_by_id === u.id
+        || (restaurant?.restaurant_name && order.restaurant_name === restaurant.restaurant_name)
+        || (restaurant?.cnpj && order.restaurant_cnpj === restaurant.cnpj)
+      );
+      setOrders((allOrders || []).filter(matchesCustomer));
     } catch {
       setUser(null);
     }
@@ -31,11 +39,7 @@ export default function MyOrders() {
     return () => { if (unsub) unsub(); };
   }, []);
 
-  if (loading) {
-    return <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>;
-  }
-
-  if (!user) {
+  if (!user && !loading) {
     return (
       <div className="max-w-md mx-auto text-center py-16">
         <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -51,6 +55,8 @@ export default function MyOrders() {
 
   const active = orders.filter(o => o.status !== 'Finalizado');
   const finalized = orders.filter(o => o.status === 'Finalizado');
+  const ordersToShow = selectedTab === 'active' ? active : finalized;
+  const showLoadingOrders = loading && !user;
 
   const renderOrder = (order) => {
     const isExpanded = expanded === order.id;
@@ -112,7 +118,33 @@ export default function MyOrders() {
     <div>
       <h1 className="text-2xl font-bold text-slate-900 mb-6">Meus Pedidos</h1>
 
-      {orders.length === 0 ? (
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setSelectedTab('active')}
+            className={`rounded-full px-4 py-2 text-sm font-medium transition ${selectedTab === 'active' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          >
+            Pedidos em andamento
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedTab('finalized')}
+            className={`rounded-full px-4 py-2 text-sm font-medium transition ${selectedTab === 'finalized' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          >
+            Pedidos concluídos
+          </button>
+        </div>
+        <p className="text-sm text-slate-500">
+          {selectedTab === 'active'
+            ? `${active.length} pedido(s) em andamento`
+            : `${finalized.length} pedido(s) concluído(s)`}
+        </p>
+      </div>
+
+      {showLoadingOrders ? (
+        <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>
+      ) : orders.length === 0 ? (
         <div className="text-center py-16 text-slate-400 bg-white rounded-xl border border-slate-200">
           <ClipboardList className="w-12 h-12 mx-auto mb-3" />
           <p className="font-medium">Você ainda não fez nenhum pedido</p>
@@ -120,22 +152,17 @@ export default function MyOrders() {
         </div>
       ) : (
         <div className="space-y-6">
-          {active.length > 0 && (
-            <div>
-              <h2 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
-                Em Andamento ({active.length})
-              </h2>
-              {active.map(renderOrder)}
-            </div>
-          )}
-          {finalized.length > 0 && (
-            <div>
-              <h2 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                <span className="w-2 h-2 bg-emerald-500 rounded-full" />
-                Finalizados ({finalized.length})
-              </h2>
-              {finalized.map(renderOrder)}
+          {ordersToShow.length > 0 ? (
+            ordersToShow.map(renderOrder)
+          ) : (
+            <div className="text-center py-16 text-slate-400 bg-white rounded-xl border border-slate-200">
+              <ClipboardList className="w-12 h-12 mx-auto mb-3" />
+              <p className="font-medium">
+                {selectedTab === 'active'
+                  ? 'Nenhum pedido em andamento no momento'
+                  : 'Nenhum pedido concluído ainda'}
+              </p>
+              <p className="text-sm mt-1">Volte sempre que precisar acompanhar seus pedidos.</p>
             </div>
           )}
         </div>

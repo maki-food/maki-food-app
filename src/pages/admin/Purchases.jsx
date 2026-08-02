@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { base44 } from '@/api/supabaseClient';
 import { formatBRL, formatDateShort } from '@/lib/format';
+import { getPeriodRange } from '@/lib/dateFilters';
 import { logAction } from '@/lib/audit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +19,7 @@ export default function Purchases() {
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [periodFilter, setPeriodFilter] = useState('today');
   const [visibleCount, setVisibleCount] = useState(20);
   const [photoView, setPhotoView] = useState(null);
 
@@ -34,7 +36,7 @@ export default function Purchases() {
 
   useEffect(() => {
     setVisibleCount(20);
-  }, [search]);
+  }, [search, dateFrom, dateTo, periodFilter]);
 
   const handleDelete = async (purchase) => {
     if (!confirm(`Excluir compra de ${purchase.supplier_name}?\nO estoque será ajustado automaticamente.`)) return;
@@ -51,13 +53,27 @@ export default function Purchases() {
     }
   };
 
+  const now = new Date();
+  const parsePurchaseDate = (value) => {
+    if (!value) return null;
+    const [year, month, day] = String(value).slice(0, 10).split('-').map(Number);
+    if (!year || !month || !day) return null;
+    return new Date(year, month - 1, day);
+  };
+  const { start: periodStart, end: periodEnd } = getPeriodRange(periodFilter);
+
   const filtered = purchases.filter(p => {
-    const matchSearch = !search ||
-      p.supplier_name?.toLowerCase().includes(search.toLowerCase()) ||
-      p.invoice_number?.toLowerCase().includes(search.toLowerCase());
-    const matchFrom = !dateFrom || (p.date && p.date >= dateFrom);
-    const matchTo = !dateTo || (p.date && p.date <= dateTo);
-    return matchSearch && matchFrom && matchTo;
+    const purchaseDate = parsePurchaseDate(p.date);
+    const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
+    const supplierName = String(p.supplier_name || '').toLocaleLowerCase('pt-BR');
+    const invoiceNumber = String(p.invoice_number || '').toLocaleLowerCase('pt-BR');
+    const matchSearch = !normalizedSearch || supplierName.includes(normalizedSearch) || invoiceNumber.includes(normalizedSearch);
+    const matchPeriod = !periodStart || (purchaseDate && purchaseDate >= periodStart && purchaseDate <= periodEnd);
+    const fromDate = parsePurchaseDate(dateFrom);
+    const toDate = parsePurchaseDate(dateTo);
+    const matchFrom = !fromDate || (purchaseDate && purchaseDate >= fromDate);
+    const matchTo = !toDate || (purchaseDate && purchaseDate <= toDate);
+    return matchPeriod && matchSearch && matchFrom && matchTo;
   });
 
   const visible = filtered.slice(0, visibleCount);
@@ -90,6 +106,12 @@ export default function Purchases() {
           />
         </div>
         <div className="flex items-center gap-2">
+          <select value={periodFilter} onChange={e => setPeriodFilter(e.target.value)} className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500">
+            <option value="today">Hoje</option>
+            <option value="week">Esta semana</option>
+            <option value="month">Este mês</option>
+            <option value="all">Todos os períodos</option>
+          </select>
           <DateInput value={dateFrom} onChange={v => setDateFrom(v)} className="w-auto" />
           <span className="text-slate-400 text-sm">até</span>
           <DateInput value={dateTo} onChange={v => setDateTo(v)} className="w-auto" />

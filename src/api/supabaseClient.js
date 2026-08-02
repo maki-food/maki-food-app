@@ -115,26 +115,65 @@ function makeEntity(tableName) {
     },
 
     subscribe(callback) {
-      // Nome único por assinatura: várias telas podem escutar a mesma
-      // tabela ao mesmo tempo sem disputar o mesmo canal.
-      const channel = supabase
-        .channel(`realtime:${tableName}:${crypto.randomUUID()}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: tableName },
-          (payload) => {
-            if (payload.eventType === 'INSERT') {
-              callback({ type: 'create', data: payload.new });
-            } else if (payload.eventType === 'UPDATE') {
-              callback({ type: 'update', data: payload.new });
-            } else if (payload.eventType === 'DELETE') {
-              callback({ type: 'delete', id: payload.old?.id, data: payload.old });
-            }
-          }
-        )
-        .subscribe();
+      let channel;
+      let retryTimer;
+      let stopped = false;
+      let reconnecting = false;
+      let retryDelay = 1000;
 
-      return () => supabase.removeChannel(channel);
+      const connect = (isReconnect = false) => {
+        if (stopped) return;
+
+        // Nome único por assinatura: várias telas podem escutar a mesma
+        // tabela ao mesmo tempo sem disputar o mesmo canal.
+        const currentChannel = supabase
+          .channel(`realtime:${tableName}:${crypto.randomUUID()}`)
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: tableName },
+            (payload) => {
+              if (payload.eventType === 'INSERT') {
+                callback({ type: 'create', data: payload.new });
+              } else if (payload.eventType === 'UPDATE') {
+                callback({ type: 'update', data: payload.new, previousData: payload.old });
+              } else if (payload.eventType === 'DELETE') {
+                callback({ type: 'delete', id: payload.old?.id, data: payload.old });
+              }
+            }
+          )
+          .subscribe((status) => {
+            if (reconnecting || stopped) return;
+            if (status === 'SUBSCRIBED') {
+              channel = currentChannel;
+              retryDelay = 1000;
+              if (isReconnect) callback({ type: 'refresh' });
+              return;
+            }
+
+            if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status) && !stopped && !retryTimer) {
+              retryTimer = setTimeout(() => {
+                retryTimer = undefined;
+                retryDelay = Math.min(retryDelay * 2, 30000);
+                reconnecting = true;
+                if (channel === currentChannel) channel = undefined;
+                Promise.resolve(supabase.removeChannel(currentChannel)).finally(() => {
+                  reconnecting = false;
+                  connect(true);
+                });
+              }, retryDelay);
+            }
+          });
+
+        channel = currentChannel;
+      };
+
+      connect();
+
+      return () => {
+        stopped = true;
+        if (retryTimer) clearTimeout(retryTimer);
+        if (channel) supabase.removeChannel(channel);
+      };
     },
   };
 }

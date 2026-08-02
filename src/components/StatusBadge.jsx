@@ -1,8 +1,10 @@
 import React from 'react';
-import { CheckCircle, Truck, Clock } from 'lucide-react';
+import { CheckCircle, Truck, Clock, Package } from 'lucide-react';
 
 const config = {
   'Pedido Emitido': { color: 'bg-amber-100 text-amber-700 border-amber-200', icon: Clock },
+  'Em Separação': { color: 'bg-orange-100 text-orange-700 border-orange-200', icon: Package },
+  'Com Entregador': { color: 'bg-violet-100 text-violet-700 border-violet-200', icon: Truck },
   'Saiu para Entrega': { color: 'bg-blue-100 text-blue-700 border-blue-200', icon: Truck },
   'Finalizado': { color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: CheckCircle },
 };

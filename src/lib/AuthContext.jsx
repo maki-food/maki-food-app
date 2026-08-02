@@ -11,6 +11,7 @@ export const AuthProvider = ({ children }) => {
   const [authError, setAuthError] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [appPublicSettings] = useState(null);
+  const [restaurantProfile, setRestaurantProfile] = useState(null);
 
   const checkUserAuth = useCallback(async () => {
     try {
@@ -19,9 +20,14 @@ export const AuthProvider = ({ children }) => {
       setUser(currentUser);
       setIsAuthenticated(true);
       setAuthError(null);
+
+      const restaurants = await base44.entities.Restaurant.filter({ user_id: currentUser.id }).catch(() => []);
+      const profile = restaurants?.[0] || null;
+      setRestaurantProfile(profile);
     } catch (error) {
       setUser(null);
       setIsAuthenticated(false);
+      setRestaurantProfile(null);
     } finally {
       setIsLoadingAuth(false);
       setAuthChecked(true);
@@ -71,6 +77,7 @@ export const AuthProvider = ({ children }) => {
       authError,
       appPublicSettings,
       authChecked,
+      restaurantProfile,
       logout,
       navigateToLogin,
       checkUserAuth,
