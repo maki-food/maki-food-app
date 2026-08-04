@@ -31,16 +31,53 @@ export default function Categories() {
   }, [categoryQuery, categories]);
 
   useEffect(() => {
-    if (!selectedCategory) {
-      setProducts([]);
-      return;
-    }
+    let active = true;
 
-    setLoadingProducts(true);
-    base44.entities.Product.filter({ category: selectedCategory.name })
-      .then(setProducts)
-      .catch(() => setProducts([]))
-      .finally(() => setLoadingProducts(false));
+    const loadProducts = async () => {
+      if (!selectedCategory) {
+        setProducts([]);
+        return;
+      }
+      setLoadingProducts(true);
+      try {
+        const rows = await base44.entities.Product.filter({ category: selectedCategory.name });
+        if (active) setProducts(rows);
+      } catch {
+        if (active) setProducts([]);
+      } finally {
+        if (active) setLoadingProducts(false);
+      }
+    };
+
+    loadProducts();
+    const unsubP = base44.entities.Product.subscribe((event) => {
+      if (!selectedCategory) return;
+      if (event.type === 'refresh') {
+        loadProducts();
+        return;
+      }
+      const item = event.data;
+      if (event.type === 'create' && item.category === selectedCategory.name) {
+        setProducts(prev => [item, ...prev]);
+        return;
+      }
+      if (event.type === 'update') {
+        if (item.category === selectedCategory.name) {
+          setProducts(prev => prev.map(p => p.id === item.id ? { ...p, ...item } : p));
+        } else {
+          setProducts(prev => prev.filter(p => p.id !== item.id));
+        }
+        return;
+      }
+      if (event.type === 'delete') {
+        setProducts(prev => prev.filter(p => p.id !== event.id));
+      }
+    });
+
+    return () => {
+      active = false;
+      if (unsubP) unsubP();
+    };
   }, [selectedCategory]);
 
   // Prevent the document body from scrolling on desktop so only the two column scrolls are visible

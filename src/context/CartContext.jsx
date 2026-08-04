@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { base44 } from '@/api/supabaseClient';
 
 const CartContext = createContext(null);
 export const useCart = () => useContext(CartContext);
@@ -14,6 +15,87 @@ export const CartProvider = ({ children }) => {
 
   // `variant` (opcional): { id, name, price, default_weight_kg }
   const isWeightUnit = (unit) => unit && ['kg', 'g', 'litro', 'L', 'mL'].includes(unit);
+
+  const normalizeCartItem = (item, product, variant) => {
+    if (!product) return item;
+
+    const next = {
+      ...item,
+      product_name: product.name || item.product_name,
+      unit: product.unit || item.unit,
+      stock_quantity: product.stock_quantity ?? 0,
+      available: product.available,
+      barcode: product.barcode || item.barcode,
+    };
+
+    if (variant) {
+      next.variant_name = variant.name || next.variant_name;
+      next.price = variant.price ?? next.price;
+      next.weight_per_unit_kg = variant.default_weight_kg ?? next.weight_per_unit_kg;
+    } else if (!item.variant_id) {
+      next.price = product.price ?? next.price;
+      next.weight_per_unit_kg = product.default_weight_kg ?? next.weight_per_unit_kg;
+    }
+
+    if (isWeightUnit(next.unit) && next.weight_per_unit_kg != null) {
+      next.weight_kg = Number(next.quantity || 0) * Number(next.weight_per_unit_kg);
+    }
+
+    const maxAvailable = isWeightUnit(next.unit) && next.weight_per_unit_kg
+      ? Math.max(0, Math.floor((next.stock_quantity || 0) / Number(next.weight_per_unit_kg)))
+      : Number(next.stock_quantity || 0);
+
+    if (next.available === false || maxAvailable <= 0) return null;
+
+    if (Number(next.quantity || 0) > maxAvailable) {
+      next.quantity = maxAvailable;
+      if (isWeightUnit(next.unit) && next.weight_per_unit_kg != null) {
+        next.weight_kg = next.quantity * Number(next.weight_per_unit_kg);
+      }
+    }
+
+    return next;
+  };
+
+  useEffect(() => {
+    const handleProductEvent = (event) => {
+      if (!event?.data) return;
+      const product = event.data;
+
+      setItems(prev => prev.map(item => {
+        if (item.product_id !== product.id) return item;
+        if (event.type === 'delete') return null;
+        return normalizeCartItem(item, product, item.variant_id ? null : undefined);
+      }).filter(Boolean));
+    };
+
+    const handleVariantEvent = (event) => {
+      if (!event?.data) return;
+      const variant = event.data;
+
+      setItems(prev => prev.map(item => {
+        if (item.variant_id !== variant.id) return item;
+        if (event.type === 'delete') return null;
+        const next = {
+          ...item,
+          variant_name: variant.name || item.variant_name,
+          price: variant.price ?? item.price,
+          weight_per_unit_kg: variant.default_weight_kg ?? item.weight_per_unit_kg,
+        };
+        if (isWeightUnit(next.unit) && next.weight_per_unit_kg != null) {
+          next.weight_kg = Number(next.quantity || 0) * Number(next.weight_per_unit_kg);
+        }
+        return next;
+      }).filter(Boolean));
+    };
+
+    const unsubProducts = base44.entities.Product.subscribe(handleProductEvent);
+    const unsubVariants = base44.entities.ProductVariant.subscribe(handleVariantEvent);
+    return () => {
+      if (unsubProducts) unsubProducts();
+      if (unsubVariants) unsubVariants();
+    };
+  }, []);
 
   const addItem = (product, qty = 1, variant = null) => {
     const isWeightProduct = isWeightUnit(product.unit);

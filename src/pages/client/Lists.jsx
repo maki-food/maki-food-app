@@ -93,7 +93,11 @@ function MyEssentials({ userId, navigate }) {
       } catch {}
       setLoading(false);
     };
+
     load();
+    const unsubP = base44.entities.Product.subscribe(() => load());
+    const unsubV = base44.entities.ProductVariant.subscribe(() => load());
+    return () => { if (unsubP) unsubP(); if (unsubV) unsubV(); };
   }, [userId]);
 
   if (loading) {
@@ -163,7 +167,12 @@ function MyLists({ userId }) {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, [userId]);
+  useEffect(() => {
+    load();
+    const unsubP = base44.entities.Product.subscribe(() => load());
+    const unsubV = base44.entities.ProductVariant.subscribe(() => load());
+    return () => { if (unsubP) unsubP(); if (unsubV) unsubV(); };
+  }, [userId]);
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
