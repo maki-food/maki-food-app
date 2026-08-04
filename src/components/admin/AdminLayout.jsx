@@ -101,11 +101,11 @@ export default function AdminLayout() {
       checkLatestOrder();
     }
 
-    const pollTimer = setInterval(() => {
-      if (user.role !== 'deliverer') checkLatestOrder();
-    }, 10000);
-
     const unsub = base44.entities.Order.subscribe((event) => {
+      if (event.type === 'refresh') {
+        if (user.role !== 'deliverer') checkLatestOrder();
+        return;
+      }
       if (event.type === 'create') {
         const o = event.data;
         lastOrderIdRef.current = o.id;
@@ -138,7 +138,6 @@ export default function AdminLayout() {
 
     return () => {
       if (unsub) unsub();
-      clearInterval(pollTimer);
     };
   }, [user]);
 

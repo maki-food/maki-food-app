@@ -44,7 +44,6 @@ export default function Orders() {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 10000);
     const unsub = base44.entities.Order.subscribe((event) => {
       if (event.type === 'refresh') {
         load();
@@ -57,7 +56,7 @@ export default function Orders() {
         return prev;
       });
     });
-    return () => { if (unsub) unsub(); clearInterval(interval); };
+    return () => { if (unsub) unsub(); };
   }, []);
 
   useEffect(() => {

@@ -39,9 +39,6 @@ export default function Deliveries() {
         if (active) setLoading(false);
       };
       load();
-      // Mantém a lista consistente mesmo enquanto o canal Realtime reconecta.
-      // O evento Realtime continua responsável pela atualização instantânea.
-      syncTimer = setInterval(load, 1000);
       unsub = base44.entities.Order.subscribe((event) => {
         if (!active) return;
         if (event.type === 'refresh') {
@@ -70,7 +67,7 @@ export default function Deliveries() {
         if (event.type === 'delete') setCompletedOrders(prev => prev.filter(o => o.id !== event.id));
       });
     }).catch(() => { if (active) setLoading(false); });
-    return () => { active = false; clearInterval(syncTimer); if (unsub) unsub(); };
+    return () => { active = false; if (unsub) unsub(); };
   }, []);
 
   const updateDeliveryStatus = async (order, newStatus) => {
