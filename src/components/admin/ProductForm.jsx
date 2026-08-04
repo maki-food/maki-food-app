@@ -16,6 +16,7 @@ const channels = ['Loja Física', 'Loja Online'];
 
 const emptyForm = {
   description: '', price: '', image_url: '', sku: '', ncm: '',
+  default_weight_kg: '',
   sales_channels: [], is_promotion: false, profit_margin_pct: '', tax_fee_pct: '', tax_pct: '',
   estimated_freight: '', available: true,
   is_raw_material: false, parent_product_id: '',
@@ -83,6 +84,7 @@ export default function ProductForm({ product, open, onClose, onSave }) {
       setForm({
         description: product.description || '', price: product.price || '', image_url: product.image_url || '',
         sku: product.sku || '', ncm: product.ncm || '',
+        default_weight_kg: product.default_weight_kg != null ? String(product.default_weight_kg) : '',
         sales_channels: product.sales_channels || [], is_promotion: product.is_promotion || false,
         profit_margin_pct: product.profit_margin_pct || '', tax_fee_pct: product.tax_fee_pct || '',
         tax_pct: product.tax_pct || '', estimated_freight: product.estimated_freight || '',
@@ -170,6 +172,7 @@ export default function ProductForm({ product, open, onClose, onSave }) {
     const data = {
       description: form.description,
       price: parseFloat(form.price) || 0,
+      default_weight_kg: form.default_weight_kg !== '' ? parseFloat(form.default_weight_kg) : null,
       image_url: form.image_url,
       sku: form.sku || null,
       ncm: form.ncm || null,
@@ -253,6 +256,13 @@ export default function ProductForm({ product, open, onClose, onSave }) {
                     <Label>Preço de Venda (R$) *</Label>
                     <Input required type="number" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} className="mt-1" placeholder="0,00" />
                   </div>
+                  <div>
+                    <Label>Peso por unidade (kg)</Label>
+                    <Input type="number" step="0.01" value={form.default_weight_kg || ''} onChange={e => setForm({ ...form, default_weight_kg: e.target.value })} className="mt-1" placeholder="Ex: 4.00" />
+                    <p className="text-xs text-slate-400 mt-1">Use quando o produto em kg deve ser vendido em unidades inteiras com peso fixo.</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Categoria</Label>
                     <Select value={selected.category || ''} onValueChange={async (v) => {

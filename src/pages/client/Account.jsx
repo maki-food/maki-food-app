@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { User, ClipboardList, UserCog, LogOut, HelpCircle, ShieldCheck, ChevronRight, MapPin, Loader2, Plus, Trash2, Package, Edit } from 'lucide-react';
-import { formatBRL, formatDate } from '@/lib/format';
+import { formatBRL, formatDate, getOrderItemQuantityLabel, getOrderItemSubtotal } from '@/lib/format';
 import StatusBadge from '@/components/StatusBadge';
 
 const emptyForm = {
@@ -617,35 +617,45 @@ export default function Account() {
               </div>
 
               {(order.items || []).length > 0 ? (
-                <div className="rounded-3xl border border-slate-200 overflow-hidden bg-white">
-                  <div className="bg-slate-100 px-4 py-3 text-xs uppercase tracking-wide text-slate-500">Produtos</div>
-                  <div className="divide-y divide-slate-100">
-                    {(order.items || []).map((item, index) => {
-                      const product = item.product_id ? productMapById[item.product_id] : null;
-                      const fallbackProduct = !product && item.product_name ? productMapByName[String(item.product_name).toLowerCase()] : null;
-                      const resolvedProduct = product || fallbackProduct;
-                      const imageUrl = item.image_url || resolvedProduct?.image_url || null;
-                      const displayName = item.product_name || resolvedProduct?.name || 'Produto';
-                      const key = item.product_id ? `${item.product_id}-${item.variant_id || 'default'}` : index;
-                      return (
-                        <div key={key} className="flex items-center gap-3 px-4 py-3">
-                          <div className="w-16 h-16 rounded-2xl bg-slate-100 overflow-hidden flex items-center justify-center">
-                            {imageUrl ? (
-                              <img src={imageUrl} alt={displayName} className="h-full w-full object-cover" />
-                            ) : (
-                              <Package className="w-6 h-6 text-slate-400" />
-                            )}
+                <>
+                  <div className="rounded-3xl border border-slate-200 overflow-hidden bg-white">
+                    <div className="bg-slate-100 px-4 py-3 text-xs uppercase tracking-wide text-slate-500">Produtos</div>
+                    <div className="divide-y divide-slate-100">
+                      {getOrderDisplayItems(order).map((item, index) => {
+                        const product = item.product_id ? productMapById[item.product_id] : null;
+                        const fallbackProduct = !product && item.product_name ? productMapByName[String(item.product_name).toLowerCase()] : null;
+                        const resolvedProduct = product || fallbackProduct;
+                        const imageUrl = item.image_url || resolvedProduct?.image_url || null;
+                        const displayName = item.product_name || resolvedProduct?.name || 'Produto';
+                        const key = item.product_id ? `${item.product_id}-${item.variant_id || 'default'}` : index;
+                        return (
+                          <div key={key} className="flex items-center gap-3 px-4 py-3">
+                            <div className="w-16 h-16 rounded-2xl bg-slate-100 overflow-hidden flex items-center justify-center">
+                              {imageUrl ? (
+                                <img src={imageUrl} alt={displayName} className="h-full w-full object-cover" />
+                              ) : (
+                                <Package className="w-6 h-6 text-slate-400" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium text-slate-900 truncate">{displayName}{item.variant_name ? ` - ${item.variant_name}` : ''}</p>
+                              <p className="text-xs text-slate-500">{getOrderItemQuantityLabel(item)} x {formatBRL(item.price || 0)}</p>
+                            </div>
+                            <p className="ml-auto text-sm font-semibold text-slate-900">{formatBRL(getOrderItemSubtotal(item))}</p>
                           </div>
-                          <div className="min-w-0">
-                            <p className="font-medium text-slate-900 truncate">{displayName}{item.variant_name ? ` - ${item.variant_name}` : ''}</p>
-                            <p className="text-xs text-slate-500">{item.quantity} x {formatBRL(item.price || 0)}</p>
-                          </div>
-                          <p className="ml-auto text-sm font-semibold text-slate-900">{formatBRL((item.price || 0) * (item.quantity || 0))}</p>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
+                  <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
+                    <span>Frete</span>
+                    <span>{(order.shipping_fee || 0) > 0 ? formatBRL(order.shipping_fee) : 'Grátis'}</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+                    <span className="text-sm text-slate-500">Total</span>
+                    <span className="text-lg font-bold text-emerald-600">{formatBRL(order.total)}</span>
+                  </div>
+                </>
               ) : (
                 <div className="rounded-3xl border border-slate-200 bg-white p-4 text-slate-500">Produtos não disponíveis</div>
               )}

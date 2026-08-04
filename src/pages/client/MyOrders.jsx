@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { base44 } from '@/api/supabaseClient';
-import { formatBRL, formatDate } from '@/lib/format';
+import { formatBRL, formatDate, getOrderDisplayItems, getOrderItemQuantityLabel, getOrderItemSubtotal } from '@/lib/format';
 import StatusBadge from '@/components/StatusBadge';
 import AuthModal from '@/components/AuthModal';
 import { Button } from '@/components/ui/button';
@@ -35,8 +35,9 @@ export default function MyOrders() {
 
   useEffect(() => {
     load();
+    const interval = setInterval(load, 10000);
     const unsub = base44.entities.Order.subscribe(() => load());
-    return () => { if (unsub) unsub(); };
+    return () => { if (unsub) unsub(); clearInterval(interval); };
   }, []);
 
   if (!user && !loading) {
@@ -94,15 +95,19 @@ export default function MyOrders() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(order.items || []).map((item, i) => (
+                  {getOrderDisplayItems(order).map((item, i) => (
                     <tr key={i} className="border-t border-slate-50">
                       <td className="px-3 py-2">{item.product_name}{item.variant_name ? ` - ${item.variant_name}` : ''}</td>
-                      <td className="px-3 py-2 text-center">{item.quantity}</td>
-                      <td className="px-3 py-2 text-right">{formatBRL((item.price || 0) * item.quantity)}</td>
+                      <td className="px-3 py-2 text-center">{getOrderItemQuantityLabel(item)}</td>
+                      <td className="px-3 py-2 text-right">{formatBRL(getOrderItemSubtotal(item))}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+            <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
+              <span>Frete</span>
+              <span>{(order.shipping_fee || 0) > 0 ? formatBRL(order.shipping_fee) : 'Grátis'}</span>
             </div>
             <div className="flex justify-between items-center pt-2 border-t border-slate-100">
               <span className="text-sm text-slate-500">Total</span>

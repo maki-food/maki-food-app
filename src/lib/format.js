@@ -12,14 +12,62 @@ export const formatDateShort = (date) => {
   return new Date(date).toLocaleDateString('pt-BR');
 };
 
+export const getOrderItemQuantity = (item) => {
+  const weightValue = item.weight_kg != null && item.weight_kg !== '' ? Number(item.weight_kg) : null;
+  const quantityValue = Number(item.quantity || 0);
+  if (weightValue != null && item.weight_per_unit_kg != null && item.weight_per_unit_kg !== '') {
+    return weightValue;
+  }
+  return quantityValue;
+};
+
+export const getOrderItemQuantityLabel = (item) => {
+  const weightValue = item.weight_kg != null && item.weight_kg !== '' ? Number(item.weight_kg) : null;
+  const quantityValue = Number(item.quantity || 0);
+  const unit = item.unit || '';
+  if (weightValue != null && item.weight_per_unit_kg != null && item.weight_per_unit_kg !== '') {
+    return `${weightValue} kg`;
+  }
+  if (unit && ['kg', 'g', 'litro', 'L', 'mL'].includes(unit)) {
+    return `${quantityValue} ${unit}`;
+  }
+  return `${quantityValue}`;
+};
+
+export const getOrderItemSubtotal = (item) => {
+  return (item.price || 0) * getOrderItemQuantity(item);
+};
+
+export const getOrderDisplayItems = (order) => {
+  const items = Array.isArray(order.items) ? [...order.items] : [];
+  const shippingFee = Number(order.shipping_fee || 0);
+  if (shippingFee <= 0) {
+    return items;
+  }
+  const shippingItem = {
+    product_id: null,
+    product_name: 'Frete',
+    barcode: '',
+    quantity: 1,
+    price: shippingFee,
+    variant_id: null,
+    variant_name: null,
+    unit: null,
+    isShippingItem: true,
+  };
+  return [...items, shippingItem];
+};
+
 export const printOrder = (order, settings = {}) => {
-  const itemsHTML = (order.items || []).map(item => {
-    const raw = formatBRL((item.price || 0) * item.quantity);
+  const displayItems = getOrderDisplayItems(order);
+  const itemsHTML = displayItems.map(item => {
+    const quantityText = getOrderItemQuantityLabel(item);
+    const raw = formatBRL(getOrderItemSubtotal(item));
     const num = raw.replace('R$', '').trim();
     return `
     <tr>
       <td style="padding:6px;border:1px solid #eee">${item.product_name}</td>
-      <td style="padding:6px;border:1px solid #eee;text-align:center">${item.quantity}</td>
+      <td style="padding:6px;border:1px solid #eee;text-align:center">${quantityText}</td>
       <td style="padding:6px;border:1px solid #eee">${item.barcode || '-'}</td>
       <td style="padding:6px;border:1px solid #eee;text-align:right"><span class="money-symbol">R$</span><span class="mono-number">${num}</span></td>
     </tr>`

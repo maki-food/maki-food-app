@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { base44 } from '@/api/supabaseClient';
-import { formatBRL, formatDate } from '@/lib/format';
+import { formatBRL, formatDate, getOrderDisplayItems, getOrderItemQuantityLabel, getOrderItemSubtotal } from '@/lib/format';
 import { logAction } from '@/lib/audit';
 import { Button } from '@/components/ui/button';
 import { Loader2, MapPin, CreditCard, Phone, Package, Camera, Truck, CheckCircle, Clock, Bike, ExternalLink } from 'lucide-react';
@@ -182,10 +182,10 @@ export default function Deliveries() {
                   <div className="bg-slate-50 rounded-lg p-3">
                     <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1"><Package className="w-3.5 h-3.5" /> ITENS</p>
                     <div className="space-y-1">
-                      {(order.items || []).map((item, i) => (
+                      {getOrderDisplayItems(order).map((item, i) => (
                         <div key={i} className="flex justify-between text-sm">
-                          <span className="text-slate-700">{item.quantity}x {item.product_name}</span>
-                          <span className="text-slate-500">{formatBRL((item.price || 0) * item.quantity)}</span>
+                          <span className="text-slate-700">{getOrderItemQuantityLabel(item)} {item.product_name}</span>
+                          <span className="text-slate-500">{formatBRL(getOrderItemSubtotal(item))}</span>
                         </div>
                       ))}
                     </div>
@@ -285,10 +285,10 @@ export default function Deliveries() {
                   <div className="flex items-center gap-2 text-slate-600"><CreditCard className="w-4 h-4 text-slate-400" /> {order.payment_method}</div>
                   <div className="rounded-lg bg-slate-50 p-3">
                     <p className="mb-2 text-xs font-semibold text-slate-400">ITENS</p>
-                    {(order.items || []).map((item, index) => (
+                    {getOrderDisplayItems(order).map((item, index) => (
                       <div key={index} className="flex justify-between text-sm">
-                        <span>{item.quantity}x {item.product_name}</span>
-                        <span className="text-slate-500">{formatBRL((item.price || 0) * item.quantity)}</span>
+                        <span>{getOrderItemQuantityLabel(item)} {item.product_name}</span>
+                        <span className="text-slate-500">{formatBRL(getOrderItemSubtotal(item))}</span>
                       </div>
                     ))}
                   </div>

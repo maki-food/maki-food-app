@@ -34,13 +34,21 @@ export default function ProductCard({ product, promoPrice, variants = [] }) {
   const displayPrice = hasVariants ? (selectedVariant?.price ?? 0) : (promoPrice !== undefined ? promoPrice : product.price);
   const hasDiscount = !hasVariants && promoPrice !== undefined && promoPrice < product.price;
   const isWeight = product.unit && ['kg', 'g', 'litro', 'L', 'mL'].includes(product.unit);
+  const productUnitWeight = hasVariants ? (selectedVariant?.default_weight_kg ?? product.default_weight_kg) : product.default_weight_kg;
+  const hasUnitWeight = isWeight && Boolean(productUnitWeight);
+  const soldByUnit = isWeight && hasUnitWeight;
   const hasLongDescription = product.description && product.description.length > 70;
-  const step = hasVariants ? 1 : (isWeight ? 0.5 : 1);
+  const step = soldByUnit ? 1 : (isWeight ? 0.1 : 1);
 
-  // Quantas unidades da variação selecionada ainda cabem no estoque disponível (em kg)
-  const maxAvailable = (hasVariants && selectedVariant?.default_weight_kg)
-    ? Math.max(0, Math.floor((product.stock_quantity || 0) / selectedVariant.default_weight_kg))
-    : product.stock_quantity;
+  const maxAvailable = (() => {
+    if (hasVariants && selectedVariant?.default_weight_kg) {
+      return Math.max(0, Math.floor((product.stock_quantity || 0) / selectedVariant.default_weight_kg));
+    }
+    if (!hasVariants && productUnitWeight) {
+      return Math.max(0, Math.floor((product.stock_quantity || 0) / productUnitWeight));
+    }
+    return Number(product.stock_quantity || 0);
+  })();
 
   // Já está no carrinho? (considera a variação selecionada, se houver)
   const activeVariantId = hasVariants ? (selectedVariant?.id || null) : null;
@@ -49,7 +57,7 @@ export default function ProductCard({ product, promoPrice, variants = [] }) {
 
   const handleAdd = () => {
     if (unavailable || (hasVariants && !selectedVariant)) return;
-    addItem({ ...product, price: displayPrice }, step, hasVariants ? selectedVariant : null);
+    addItem({ ...product, price: displayPrice, default_weight_kg: productUnitWeight }, step, hasVariants ? selectedVariant : null);
   };
 
   const handleIncrease = () => {
@@ -159,7 +167,10 @@ export default function ProductCard({ product, promoPrice, variants = [] }) {
               </span>
             ) : cartQty > 0 ? (
               <div className="flex items-center gap-2 w-full rounded-xl border border-slate-200 bg-white px-2 py-1.5">
-                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700"><span className="sm:hidden">{cartQty} und</span><span className="hidden sm:inline">{cartQty} {cartQty === 1 ? 'unidade' : 'unidades'}</span></span>
+                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700">
+                  <span className="sm:hidden">{cartQty} {soldByUnit ? 'und' : isWeight ? 'kg' : 'und'}</span>
+                  <span className="hidden sm:inline">{cartQty} {soldByUnit ? (cartQty === 1 ? 'unidade' : 'unidades') : isWeight ? 'kg' : (cartQty === 1 ? 'unidade' : 'unidades')}</span>
+                </span>
                 <button type="button" onClick={handleDecrease} className="w-8 h-8 rounded-lg flex items-center justify-center text-rose-600 bg-rose-50 hover:bg-rose-100">
                   {cartQty <= step ? <Trash2 className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
                 </button>

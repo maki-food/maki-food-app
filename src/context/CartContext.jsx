@@ -13,11 +13,24 @@ export const CartProvider = ({ children }) => {
   }, [items]);
 
   // `variant` (opcional): { id, name, price, default_weight_kg }
+  const isWeightUnit = (unit) => unit && ['kg', 'g', 'litro', 'L', 'mL'].includes(unit);
+
   const addItem = (product, qty = 1, variant = null) => {
+    const isWeightProduct = isWeightUnit(product.unit);
+    const unitWeight = variant?.default_weight_kg ?? product.default_weight_kg ?? null;
     setItems(prev => {
       const existing = prev.find(i => i.product_id === product.id && (i.variant_id || null) === (variant?.id || null));
       if (existing) {
-        return prev.map(i => (i === existing) ? { ...i, quantity: i.quantity + qty } : i);
+        const nextQty = existing.quantity + qty;
+        return prev.map(i => (i === existing)
+          ? {
+            ...i,
+            quantity: nextQty,
+            weight_kg: isWeightProduct
+              ? (unitWeight != null ? nextQty * unitWeight : nextQty)
+              : i.weight_kg,
+          }
+          : i);
       }
       return [...prev, {
         product_id: product.id,
@@ -27,9 +40,10 @@ export const CartProvider = ({ children }) => {
         name: variant ? `${product.name} - ${variant.name}` : product.name,
         price: variant ? variant.price : product.price,
         quantity: qty,
-        // kg que essa linha do carrinho vai consumir do estoque (produtos por variação sempre em kg)
-        weight_kg: variant ? (variant.default_weight_kg != null ? variant.default_weight_kg * qty : null) : null,
-        weight_per_unit_kg: variant?.default_weight_kg ?? null,
+        weight_kg: isWeightProduct
+          ? (unitWeight != null ? qty * unitWeight : qty)
+          : null,
+        weight_per_unit_kg: unitWeight,
         unit: product.unit,
         stock_quantity: product.stock_quantity,
         image_url: product.image_url,
@@ -43,14 +57,27 @@ export const CartProvider = ({ children }) => {
 
   const updateQuantity = (productId, qty, variantId = null) => {
     if (qty <= 0) return removeItem(productId, variantId);
-    setItems(prev => prev.map(i => (i.product_id === productId && (i.variant_id || null) === (variantId || null))
-      ? { ...i, quantity: qty, weight_kg: i.weight_per_unit_kg != null ? i.weight_per_unit_kg * qty : null }
-      : i));
+    setItems(prev => prev.map(i => {
+      if (i.product_id !== productId || (i.variant_id || null) !== (variantId || null)) return i;
+      const isWeightProduct = isWeightUnit(i.unit);
+      return {
+        ...i,
+        quantity: qty,
+        weight_kg: isWeightProduct
+          ? (i.weight_per_unit_kg != null ? qty * i.weight_per_unit_kg : qty)
+          : i.weight_kg,
+      };
+    }));
   };
 
   const clearCart = () => setItems([]);
 
-  const total = items.reduce((s, i) => s + (i.price || 0) * i.quantity, 0);
+  const total = items.reduce((s, i) => {
+    const effectiveQty = (i.weight_per_unit_kg != null && i.weight_per_unit_kg !== '')
+      ? Number(i.quantity || 0) * Number(i.weight_per_unit_kg)
+      : Number(i.quantity || 0);
+    return s + (i.price || 0) * effectiveQty;
+  }, 0);
   const count = items.reduce((s, i) => s + i.quantity, 0);
 
   return (

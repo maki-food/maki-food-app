@@ -8,6 +8,13 @@ ALTER TABLE addresses
 ADD COLUMN IF NOT EXISTS number TEXT,
 ADD COLUMN IF NOT EXISTS complement TEXT;
 
+-- Adicionar coluna para peso por unidade em produtos e suas variações
+ALTER TABLE public.products
+ADD COLUMN IF NOT EXISTS default_weight_kg numeric;
+
+ALTER TABLE public.product_variants
+ADD COLUMN IF NOT EXISTS default_weight_kg numeric;
+
 -- Registrar o momento exato em que uma entrega foi concluída.
 ALTER TABLE orders
 ADD COLUMN IF NOT EXISTS delivery_completed_at TIMESTAMPTZ;

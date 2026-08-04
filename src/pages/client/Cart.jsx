@@ -52,6 +52,24 @@ export default function Cart() {
 
   const shippingFee = total >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
   const grandTotal = total + shippingFee;
+  const freeShippingDifference = Math.max(0, FREE_SHIPPING_THRESHOLD - total);
+  const showFreeShippingMessage = total < FREE_SHIPPING_THRESHOLD;
+
+  const shippingItem = shippingFee > 0 && items.length > 0 ? {
+    product_id: null,
+    product_name: 'Frete',
+    name: 'Frete',
+    price: shippingFee,
+    quantity: 1,
+    barcode: '',
+    variant_id: null,
+    variant_name: null,
+    unit: null,
+    stock_quantity: 1,
+    isShippingItem: true,
+  } : null;
+
+  const displayItems = shippingItem ? [...items, shippingItem] : items;
 
   const applyRestaurantProfile = (profile) => {
     if (!profile) return;
@@ -145,23 +163,33 @@ export default function Cart() {
 
     setSubmitting(true);
     try {
-      const orderItems = items.map(i => ({
-        product_id: i.product_id || null,
-        product_name: i.product_name || i.name,
-        quantity: i.quantity,
-        barcode: i.barcode || '',
-        price: i.price,
-        image_url: i.image_url || null,
-        variant_id: i.variant_id || null,
-        variant_name: i.variant_name || null,
-        weight_kg: i.weight_kg || null,
-      }));
+      const orderItems = items.map(i => {
+        const isWeightProduct = i.unit && ['kg', 'g', 'litro', 'L', 'mL'].includes(i.unit);
+        const unitWeight = i.weight_per_unit_kg != null ? Number(i.weight_per_unit_kg) : null;
+        const quantityUnits = Number(i.quantity || 0);
+        const effectiveWeight = isWeightProduct
+          ? (unitWeight != null ? quantityUnits * unitWeight : quantityUnits)
+          : null;
+
+        return {
+          product_id: i.product_id || null,
+          product_name: i.product_name || i.name,
+          quantity: quantityUnits,
+          barcode: i.barcode || '',
+          price: i.price,
+          image_url: i.image_url || null,
+          variant_id: i.variant_id || null,
+          variant_name: i.variant_name || null,
+          weight_kg: effectiveWeight,
+          weight_per_unit_kg: unitWeight,
+        };
+      });
 
       // Reduz o estoque de cada produto via RPC segura no banco antes de criar o pedido
       for (const item of orderItems) {
         if (!item.product_id) continue;
 
-        const qtyToDeduct = Number(item.quantity || 0);
+        const qtyToDeduct = Number(item.weight_kg != null ? item.weight_kg : item.quantity || 0);
         if (qtyToDeduct <= 0) continue;
 
         const result = await base44.stock.decrementStock({
@@ -301,23 +329,50 @@ export default function Cart() {
       <div className={`grid min-w-0 grid-cols-1 gap-6 ${isCheckoutPage ? 'lg:grid-cols-[minmax(0,1fr)_360px] mx-auto max-w-6xl' : isCartPage ? 'grid-cols-1' : 'lg:grid-cols-3'}`}>
         <div className={`${isCheckoutPage ? '' : isCartPage ? 'flex flex-col h-[calc(100vh-7rem)] overflow-hidden' : 'lg:col-span-2'} min-w-0 ${isCartPage ? '' : 'space-y-3'}`}>
           <div className={`${isCartPage ? 'flex-1 overflow-y-auto space-y-3' : 'space-y-3'}`}>
-            {items.map(item => (
-              <div key={item.product_id + (item.variant_id || '')} className={`bg-white rounded-xl border border-slate-200 flex items-center gap-3 ${isCartPage ? 'flex-wrap p-3' : 'p-4 gap-4'}`}>
-                <div className="w-14 h-14 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0 flex items-center justify-center">
-                  {item.image_url ? <img src={item.image_url} alt="" className="w-full h-full object-cover" /> : <Package className="w-6 h-6 text-slate-300" />}
+            {displayItems.map(item => (
+              item.isShippingItem ? (
+                <div key={item.product_id} className={`bg-white rounded-xl border border-slate-200 flex items-center gap-3 ${isCartPage ? 'flex-wrap p-3' : 'p-4 gap-4'}`}>
+                  <div className="w-14 h-14 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0 flex items-center justify-center">
+                    <Truck className="w-6 h-6 text-slate-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-slate-900 truncate">{item.name}</p>
+                    <p className="text-sm text-slate-500">{formatBRL(item.price)}</p>
+                  </div>
+                  <div className="flex items-center gap-2 ml-auto">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">1x</span>
+                  </div>
+                  <p className={`${isCartPage ? 'hidden' : 'hidden sm:block'} font-semibold text-slate-900 w-20 text-right`}>
+                    {formatBRL(item.price)}
+                  </p>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-slate-900 truncate">{item.name}</p>
-                  <p className="text-sm text-slate-500">{formatBRL(item.price)}{item.variant_name ? ` / ${item.variant_name}` : ''}</p>
+              ) : (
+                <div key={item.product_id + (item.variant_id || '')} className={`bg-white rounded-xl border border-slate-200 flex items-center gap-3 ${isCartPage ? 'flex-wrap p-3' : 'p-4 gap-4'}`}>
+                  <div className="w-14 h-14 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0 flex items-center justify-center">
+                    {item.image_url ? <img src={item.image_url} alt="" className="w-full h-full object-cover" /> : <Package className="w-6 h-6 text-slate-300" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-slate-900 truncate">{item.name}</p>
+                    <p className="text-sm text-slate-500">{formatBRL(item.price)}{item.variant_name ? ` / ${item.variant_name}` : ''}</p>
+                  </div>
+                  <div className="flex items-center gap-2 ml-auto">
+                    <QuantitySelector
+                      value={item.quantity}
+                      onChange={v => updateQuantity(item.product_id, v, item.variant_id)}
+                      min={(item.unit && ['kg', 'g', 'litro', 'L', 'mL'].includes(item.unit)) ? (item.weight_per_unit_kg ? 1 : 0.1) : 1}
+                      max={item.stock_quantity}
+                      step={(item.unit && ['kg', 'g', 'litro', 'L', 'mL'].includes(item.unit)) ? (item.weight_per_unit_kg ? 1 : 0.1) : 1}
+                      size="sm"
+                    />
+                    <button onClick={() => removeItem(item.product_id, item.variant_id)} className="p-2 text-slate-400 hover:text-red-600">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <p className={`${isCartPage ? 'hidden' : 'hidden sm:block'} font-semibold text-slate-900 w-20 text-right`}>
+                    {formatBRL(item.price * ((item.weight_per_unit_kg != null ? item.quantity * item.weight_per_unit_kg : item.quantity) || 0))}
+                  </p>
                 </div>
-                <div className="flex items-center gap-2 ml-auto">
-                  <QuantitySelector value={item.quantity} onChange={v => updateQuantity(item.product_id, v, item.variant_id)} min={(item.unit && ['kg', 'g', 'litro', 'L', 'mL'].includes(item.unit)) ? 0.1 : 1} max={item.stock_quantity} step={(item.unit && ['kg', 'g', 'litro', 'L', 'mL'].includes(item.unit)) ? 0.5 : 1} size="sm" />
-                  <button onClick={() => removeItem(item.product_id, item.variant_id)} className="p-2 text-slate-400 hover:text-red-600">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-                <p className={`${isCartPage ? 'hidden' : 'hidden sm:block'} font-semibold text-slate-900 w-20 text-right`}>{formatBRL(item.price * item.quantity)}</p>
-              </div>
+              )
             ))}
           </div>
 
@@ -330,10 +385,19 @@ export default function Cart() {
                       Total aproximado
                       <button type="button" title="Para produtos vendidos por peso, o valor final pode variar após a separação." onClick={() => setShowCostInfo(true)} className="text-slate-400 hover:text-emerald-600 lg:pointer-events-none"><Info className="h-3.5 w-3.5" /></button>
                     </span>
-                    <p className="text-xs text-slate-500">Valor aproximado do pedido.Se sua compra tem algum produto vendido por peso O total final pode ser ajustado ao preparar sua compra.</p>
+                    <p className="text-xs text-slate-500">Valor aproximado do pedido. Se sua compra tem algum produto vendido por peso, o total final pode ser ajustado ao preparar sua compra.</p>
                   </div>
                   <span className="text-xl font-bold text-slate-900">{formatBRL(grandTotal)}</span>
                 </div>
+                {showFreeShippingMessage && (
+                  <p className="mt-3 text-xs font-medium text-amber-500">Faltam {formatBRL(freeShippingDifference)} para frete grátis</p>
+                )}
+                {shippingFee > 0 && (
+                  <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
+                    <span>Frete</span>
+                    <span>{formatBRL(shippingFee)}</span>
+                  </div>
+                )}
                 <p className="mt-3 text-xs font-medium text-emerald-600">Frete grátis para compras superiores a {formatBRL(FREE_SHIPPING_THRESHOLD)}</p>
                 <Button onClick={() => navigate('/loja/finalizar-pedido')} className="mt-4 h-11 w-full bg-emerald-600 font-semibold hover:bg-emerald-700">Prosseguir com pedido</Button>
               </div>
@@ -358,6 +422,15 @@ export default function Cart() {
                     </div>
                     <span className="text-xl font-bold text-slate-900">{formatBRL(grandTotal)}</span>
                   </div>
+                  {showFreeShippingMessage && (
+                    <p className="mt-3 text-xs font-medium text-amber-500">Faltam {formatBRL(freeShippingDifference)} para frete grátis</p>
+                  )}
+                  {shippingFee > 0 && (
+                    <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
+                      <span>Frete</span>
+                      <span>{formatBRL(shippingFee)}</span>
+                    </div>
+                  )}
                   <p className="mt-3 text-xs font-medium text-emerald-600">Frete grátis para compras superiores a {formatBRL(FREE_SHIPPING_THRESHOLD)}</p>
                   <Button onClick={() => navigate('/loja/finalizar-pedido')} className="mt-4 h-11 w-full bg-emerald-600 font-semibold hover:bg-emerald-700">
                     Prosseguir com pedido

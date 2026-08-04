@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import { base44 } from '@/api/supabaseClient';
 import { useSettings } from '@/context/SettingsContext';
@@ -16,6 +16,7 @@ export default function AdminLayout() {
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const lastOrderIdRef = useRef(null);
 
   useEffect(() => {
     base44.auth.me()
@@ -70,54 +71,75 @@ export default function AdminLayout() {
       }
     };
 
+    const notifyOrder = (title, description) => {
+      setNotification({ title, message: description });
+      playSound();
+      setTimeout(() => setNotification(null), 10000);
+    };
+
+    const checkLatestOrder = async () => {
+      try {
+        const recent = await base44.entities.Order.list('-created_date', 1);
+        if (!recent?.length) return;
+        const latest = recent[0];
+        if (!lastOrderIdRef.current) {
+          lastOrderIdRef.current = latest.id;
+          return;
+        }
+        if (latest.id !== lastOrderIdRef.current) {
+          lastOrderIdRef.current = latest.id;
+          if (user.role === 'admin' || user.role === 'seller') {
+            notifyOrder('Novo Pedido!', `${latest.restaurant_name} • ${formatBRL(latest.total)}`);
+          }
+        }
+      } catch {
+        // ignore polling failures
+      }
+    };
+
+    if (user.role !== 'deliverer') {
+      checkLatestOrder();
+    }
+
+    const pollTimer = setInterval(() => {
+      if (user.role !== 'deliverer') checkLatestOrder();
+    }, 10000);
+
     const unsub = base44.entities.Order.subscribe((event) => {
       if (event.type === 'create') {
         const o = event.data;
+        lastOrderIdRef.current = o.id;
         const isDelivererAssigned = user.role === 'deliverer' && o.deliverer_id === user.id;
         const isAdmin = user.role === 'admin' || user.role === 'seller';
         if (isAdmin || isDelivererAssigned) {
           const title = isDelivererAssigned ? 'Nova Entrega Atribuída!' : 'Novo Pedido!';
           const description = `${o.restaurant_name} • ${formatBRL(o.total)}`;
-          setNotification({ title, message: description });
-          playSound();
-          setTimeout(() => setNotification(null), 10000);
+          notifyOrder(title, description);
         }
       }
       if (event.type === 'update' && user.role !== 'deliverer') {
         const o = event.data;
         if (o.delivery_status === 'Aceito' && o.deliverer_name) {
-          const title = 'Entrega Aceita!';
-          const description = `${o.restaurant_name} — aceita por ${o.deliverer_name}`;
-          setNotification({ title, message: description });
-          playSound();
-          setTimeout(() => setNotification(null), 10000);
+          notifyOrder('Entrega Aceita!', `${o.restaurant_name} — aceita por ${o.deliverer_name}`);
         } else if (o.delivery_status === 'Saiu para Entrega') {
-          const title = 'Saiu para Entrega!';
-          const description = `${o.restaurant_name} — ${o.deliverer_name || ''}`;
-          setNotification({ title, message: description });
-          playSound();
-          setTimeout(() => setNotification(null), 10000);
+          notifyOrder('Saiu para Entrega!', `${o.restaurant_name} — ${o.deliverer_name || ''}`);
         } else if (o.delivery_status === 'Finalizado' || o.status === 'Finalizado') {
-          const title = 'Entrega Finalizada!';
-          const description = `${o.restaurant_name}`;
-          setNotification({ title, message: description });
-          playSound();
-          setTimeout(() => setNotification(null), 10000);
+          notifyOrder('Entrega Finalizada!', `${o.restaurant_name}`);
         }
       }
       if (event.type === 'update' && user.role === 'deliverer') {
         const wasAssignedToUser = event.previousData?.deliverer_id === user.id;
         const isAssignedToUser = event.data?.deliverer_id === user.id;
         if (isAssignedToUser && !wasAssignedToUser) {
-          const title = 'Você recebeu uma entrega!';
-          const description = `${event.data.restaurant_name} • ${formatBRL(event.data.total)}`;
-          setNotification({ title, message: description });
-          playSound();
-          setTimeout(() => setNotification(null), 10000);
+          notifyOrder('Você recebeu uma entrega!', `${event.data.restaurant_name} • ${formatBRL(event.data.total)}`);
         }
       }
     });
-    return () => { if (unsub) unsub(); };
+
+    return () => {
+      if (unsub) unsub();
+      clearInterval(pollTimer);
+    };
   }, [user]);
 
   if (loading) {

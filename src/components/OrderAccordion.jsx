@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/supabaseClient';
-import { formatBRL, formatDate, printOrder } from '@/lib/format';
+import { formatBRL, formatDate, printOrder, getOrderItemQuantityLabel, getOrderItemSubtotal, getOrderDisplayItems } from '@/lib/format';
 import { useSettings } from '@/context/SettingsContext';
 import StatusBadge from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
@@ -104,37 +104,94 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
     return Number.isFinite(stock) ? Math.max(0, stock) : 0;
   };
 
+  const getItemStep = (item) => {
+    const unit = getItemProduct(item)?.unit || '';
+    return ['kg', 'g', 'litro', 'L', 'mL'].includes(unit) ? 0.001 : 1;
+  };
+
+  const formatWeightQuantity = (value) => {
+    if (value === '' || value == null) return '';
+    const numeric = Number(String(value).replace(/,/g, '.'));
+    if (!Number.isFinite(numeric)) return '';
+    return numeric.toFixed(3);
+  };
+
+  const { settings } = useSettings();
+  const SHIPPING_FEE = settings?.shipping_fee ?? 0;
+  const FREE_SHIPPING_THRESHOLD = settings?.free_shipping_threshold ?? 0;
+  const getEffectiveShippingFee = (subtotal) => {
+    if (FREE_SHIPPING_THRESHOLD > 0 && subtotal >= FREE_SHIPPING_THRESHOLD) {
+      return 0;
+    }
+    return SHIPPING_FEE;
+  };
+
   const applyQuantityChange = (idx, nextQuantity) => {
     const currentItem = items[idx];
     if (!currentItem) return;
 
-    const currentQty = Number(currentItem.quantity) || 0;
     const normalizedNextQty = Math.max(0, Number(nextQuantity) || 0);
-
-    if (normalizedNextQty === currentQty) return;
-
     const stockLimit = getItemStockLimit(currentItem);
-    if (normalizedNextQty > stockLimit) {
-      return;
-    }
+    if (normalizedNextQty > stockLimit) return;
 
-    setItems(prev => prev.reduce((acc, it, i) => {
-      if (i === idx) {
-        if (normalizedNextQty > 0) {
-          acc.push({ ...it, quantity: normalizedNextQty });
-        }
-        return acc;
+    setItems(prev => prev.map((it, i) => i === idx ? {
+      ...it,
+      quantity: normalizedNextQty,
+      weight_kg: getItemStep(it) < 1 ? normalizedNextQty : it.weight_kg,
+    } : it));
+  };
+
+  const updateItemField = (idx, field, value) => {
+    setItems(prev => prev.map((it, i) => {
+      if (i !== idx) return it;
+      if (field === 'quantity') {
+        const isWeight = ['kg', 'g', 'litro', 'L', 'mL'].includes(getItemProduct(it)?.unit || '');
+        const rawValue = value === '' ? '' : String(value).replace(/,/g, '.');
+        const numeric = Number(rawValue);
+        const quantityValue = rawValue === '' ? '' : (Number.isFinite(numeric) ? rawValue : '');
+
+        return {
+          ...it,
+          quantity: quantityValue,
+          weight_kg: isWeight && Number.isFinite(numeric) ? Math.max(1, numeric) : it.weight_kg,
+        };
       }
+      if (field === 'price') {
+        const numeric = value === '' ? '' : parseFloat(value);
+        return { ...it, price: value === '' ? '' : (Number.isFinite(numeric) ? numeric : 0) };
+      }
+      return it;
+    }));
+  };
 
-      acc.push(it);
-      return acc;
-    }, []));
+  const handleQuantityBlur = (idx, value) => {
+    setItems(prev => prev.map((it, i) => {
+      if (i !== idx) return it;
+      const isWeight = ['kg', 'g', 'litro', 'L', 'mL'].includes(getItemProduct(it)?.unit || '');
+      if (!isWeight) return it;
+
+      const rawValue = value === '' ? '' : String(value).replace(/,/g, '.');
+      const numeric = Number(rawValue);
+      if (!Number.isFinite(numeric)) return it;
+
+      const adjusted = Math.max(1, Math.round(numeric * 100) / 100);
+      return {
+        ...it,
+        quantity: adjusted.toFixed(3),
+        weight_kg: adjusted,
+      };
+    }));
   };
 
   const saveItems = async () => {
-    const numericItems = items.map(i => ({ ...i, quantity: parseFloat(i.quantity) || 0 }));
+    const numericItems = items.map(i => ({
+      ...i,
+      quantity: parseFloat(i.quantity) || 0,
+      price: parseFloat(i.price) || 0,
+    }));
     const subtotal = numericItems.reduce((s, i) => s + (i.price || 0) * i.quantity, 0);
-    const total = subtotal + (order.shipping_fee || 0);
+    const effectiveShippingFee = getEffectiveShippingFee(subtotal);
+    const total = subtotal + effectiveShippingFee;
     const optimisticItems = numericItems.map(item => ({ ...item }));
     const previousItems = originalItemsRef.current.map(item => ({ ...item }));
 
@@ -151,7 +208,7 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
         appliedAdjustments.push(adjustment);
       }
 
-      await base44.entities.Order.update(order.id, { items: optimisticItems, total });
+      await base44.entities.Order.update(order.id, { items: optimisticItems, total, shipping_fee: effectiveShippingFee });
       await logAction('Itens do Pedido Editados', `${order.restaurant_name} - ${optimisticItems.length} itens`);
       onUpdate?.();
     } catch (error) {
@@ -252,8 +309,6 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
 
   const itemCount = (order.items || []).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
 
-  const { settings } = useSettings();
-
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-3">
       <button
@@ -297,75 +352,122 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
                 <tr className="text-left text-xs text-slate-400 bg-slate-50">
                   <th className="px-3 py-2">Produto</th>
                   <th className="px-3 py-2 text-center">Qtd</th>
+                  <th className="px-3 py-2 text-right">Preço Unit.</th>
                   <th className="px-3 py-2">Código de Barras</th>
                   <th className="px-3 py-2 text-right">Subtotal</th>
                   {editing && <th className="px-3 py-2"></th>}
                 </tr>
               </thead>
               <tbody>
-                {(editing ? items : order.items || []).map((item, idx) => (
-                  <tr key={idx} className="border-t border-slate-50">
-                    <td className="px-3 py-2">{item.product_name}{item.variant_name ? ` - ${item.variant_name}` : ''}</td>
-                    <td className="px-3 py-2 text-center">
-                      {editing ? (
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => applyQuantityChange(idx, Math.max(0, Number(item.quantity || 0) - 1))}
-                            className="h-7 w-7 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                            disabled={(Number(item.quantity) || 0) <= 1}
-                          >
-                            −
-                          </button>
-                          <div className="flex flex-col items-center">
-                            <span className="text-sm font-semibold text-slate-800">{item.quantity}</span>
-                            <span className="text-[11px] text-slate-400 whitespace-nowrap">{products.find(p => p.name === item.product_name)?.unit || ''}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => applyQuantityChange(idx, (Number(item.quantity) || 0) + 1)}
-                            className="h-7 w-7 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                            disabled={(Number(item.quantity) || 0) >= getItemStockLimit(item)}
-                          >
-                            +
-                          </button>
-                        </div>
-                      ) : (
-                        <span>{item.quantity} {products.find(p => p.name === item.product_name)?.unit || ''}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-slate-500 font-mono text-xs">{item.barcode || '-'}</td>
-                    <td className="px-3 py-2 text-right">
-                      {(() => {
-                        const f = formatBRL((item.price || 0) * item.quantity);
-                        const num = f.replace('R$', '').replace(/\u00A0/g, ' ').trim();
-                        return (
-                          <span className="inline-flex items-center justify-end w-full">
-                            <span className="text-slate-700 mr-1">R$</span>
-                            <span className="font-mono tabular-nums text-right" style={{minWidth: 64}}>{num}</span>
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    {editing && (
-                      <td className="px-3 py-2 text-right">
-                        <button onClick={() => deleteItem(idx)} className="text-red-500 hover:text-red-700">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                {(editing ? items : getOrderDisplayItems(order)).map((item, idx) => {
+                  const unit = products.find(p => p.name === item.product_name)?.unit || '';
+                  const step = getItemStep(item);
+                  const quantityValue = item.quantity !== undefined ? item.quantity : 0;
+                  const priceValue = item.price !== undefined ? item.price : 0;
+                  return (
+                    <tr key={idx} className="border-t border-slate-50">
+                      <td className="px-3 py-2">{item.product_name}{item.variant_name ? ` - ${item.variant_name}` : ''}</td>
+                      <td className="px-3 py-2 text-center">
+                        {editing ? (
+                          (() => {
+                            const isWeightItem = ['kg', 'g', 'litro', 'L', 'mL'].includes(unit);
+                            const inputStep = isWeightItem ? 0.01 : step;
+                            const inputMin = isWeightItem ? 1 : step;
+                            return isWeightItem ? (
+                              <div className="flex flex-col items-center">
+                                <input
+                                  type="number"
+                                  step={inputStep}
+                                  min={inputMin}
+                                  value={quantityValue}
+                                  onChange={(e) => updateItemField(idx, 'quantity', e.target.value)}
+                                  onBlur={(e) => handleQuantityBlur(idx, e.target.value)}
+                                  className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-center text-sm text-slate-800"
+                                />
+                                <span className="text-[11px] text-slate-400 whitespace-nowrap">{unit}</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => applyQuantityChange(idx, Math.max(0, Number(quantityValue || 0) - step))}
+                                  className="h-7 w-7 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  disabled={(Number(quantityValue) || 0) <= step}
+                                >
+                                  −
+                                </button>
+                                <div className="flex flex-col items-center">
+                                  <input
+                                    type="number"
+                                    step={inputStep}
+                                    min={inputMin}
+                                    value={quantityValue}
+                                    onChange={(e) => updateItemField(idx, 'quantity', e.target.value)}
+                                    className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-center text-sm text-slate-800"
+                                  />
+                                  <span className="text-[11px] text-slate-400 whitespace-nowrap">{unit}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => applyQuantityChange(idx, (Number(quantityValue) || 0) + step)}
+                                  className="h-7 w-7 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  disabled={(Number(quantityValue) || 0) >= getItemStockLimit(item)}
+                                >
+                                  +
+                                </button>
+                              </div>
+                            );
+                          })()
+                        ) : (
+                          <span>{getOrderItemQuantityLabel(item)}</span>
+                        )}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      <td className="px-3 py-2 text-right">
+                        {editing ? (
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={priceValue}
+                            onChange={(e) => updateItemField(idx, 'price', e.target.value)}
+                            className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-right text-sm text-slate-800"
+                          />
+                        ) : (
+                          <span className="font-mono">{formatBRL(priceValue)}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-slate-500 font-mono text-xs">{item.barcode || '-'}</td>
+                      <td className="px-3 py-2 text-right">
+                        {(() => {
+                          const subtotalValue = getOrderItemSubtotal(item);
+                          const f = formatBRL(subtotalValue);
+                          const num = f.replace('R$', '').replace(/\u00A0/g, ' ').trim();
+                          return (
+                            <span className="inline-flex items-center justify-end w-full">
+                              <span className="text-slate-700 mr-1">R$</span>
+                              <span className="font-mono tabular-nums text-right" style={{minWidth: 64}}>{num}</span>
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      {editing && (
+                        <td className="px-3 py-2 text-right">
+                          <button onClick={() => deleteItem(idx)} className="text-red-500 hover:text-red-700">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
           <div className="flex flex-wrap justify-end gap-x-6 gap-y-1 text-sm py-2 border-t border-slate-100">
-            <span className="text-slate-500">Subtotal: <strong className="text-slate-700"><span className="inline-flex items-center"><span className="text-slate-700 mr-1">R$</span><span className="font-mono tabular-nums" style={{minWidth:64}}>{formatBRL((editing ? items : order.items || []).reduce((s, i) => s + (i.price || 0) * (parseFloat(i.quantity) || 0), 0)).replace('R$', '').replace(/\u00A0/g, ' ').trim()}</span></span></strong></span>
-            {(order.shipping_fee || 0) > 0 && (
-              <span className="text-slate-500">Frete: <strong className="text-slate-700">{order.shipping_fee ? (<span className="inline-flex items-center"><span className="text-slate-700 mr-1">R$</span><span className="font-mono tabular-nums" style={{minWidth:64}}>{formatBRL(order.shipping_fee).replace('R$', '').replace(/\u00A0/g, ' ').trim()}</span></span>) : 'Grátis'}</strong></span>
-            )}
-            <span className="text-slate-500">Total: <strong className="text-emerald-600"><span className="inline-flex items-center"><span className="text-slate-700 mr-1">R$</span><span className="font-mono tabular-nums" style={{minWidth:64}}>{formatBRL((editing ? items : order.items || []).reduce((s, i) => s + (i.price || 0) * (parseFloat(i.quantity) || 0), 0) + (order.shipping_fee || 0)).replace('R$', '').replace(/\u00A0/g, ' ').trim()}</span></span></strong></span>
+            <span className="text-slate-500">Subtotal: <strong className="text-slate-700"><span className="inline-flex items-center"><span className="text-slate-700 mr-1">R$</span><span className="font-mono tabular-nums" style={{minWidth:64}}>{formatBRL((editing ? items : order.items || []).reduce((s, i) => s + getOrderItemSubtotal(i), 0)).replace('R$', '').replace(/\u00A0/g, ' ').trim()}</span></span></strong></span>
+            <span className="text-slate-500">Frete: <strong className="text-slate-700">{(order.shipping_fee || 0) > 0 ? (<span className="inline-flex items-center"><span className="text-slate-700 mr-1">R$</span><span className="font-mono tabular-nums" style={{minWidth:64}}>{formatBRL(order.shipping_fee).replace('R$', '').replace(/\u00A0/g, ' ').trim()}</span></span>) : 'Grátis'}</strong></span>
+            <span className="text-slate-500">Total: <strong className="text-emerald-600"><span className="inline-flex items-center"><span className="text-slate-700 mr-1">R$</span><span className="font-mono tabular-nums" style={{minWidth:64}}>{formatBRL((editing ? items : order.items || []).reduce((s, i) => s + getOrderItemSubtotal(i), 0) + (order.shipping_fee || 0)).replace('R$', '').replace(/\u00A0/g, ' ').trim()}</span></span></strong></span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">

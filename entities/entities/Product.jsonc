@@ -32,6 +32,9 @@
       "type": "string",
       "default": "un"
     },
+    "default_weight_kg": {
+      "type": "number"
+    },
     "sku": {
       "type": "string"
     },
