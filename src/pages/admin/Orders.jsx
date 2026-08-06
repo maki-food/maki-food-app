@@ -70,17 +70,18 @@ export default function Orders() {
   const handleDelete = async (order) => {
     if (!confirm(`Excluir pedido de ${order.restaurant_name}?`)) return;
 
+    const orderItems = Array.isArray(order.items) ? order.items : [];
+    setOrders(prev => prev.filter(o => o.id !== order.id));
+
     try {
-      const orderItems = Array.isArray(order.items) ? order.items : [];
       const products = await base44.entities.Product.list().catch(() => []);
       const productLookupByName = new Map(
         products.map(product => [String(product.name || '').trim().toLowerCase(), product])
       );
 
-      const appliedAdjustments = [];
-      for (const item of orderItems) {
+      await Promise.allSettled(orderItems.map(async (item) => {
         const quantity = Number(item.weight_kg ?? item.quantity ?? 0);
-        if (!Number.isFinite(quantity) || quantity <= 0) continue;
+        if (!Number.isFinite(quantity) || quantity <= 0) return null;
 
         let productId = item.product_id || null;
         if (!productId) {
@@ -88,11 +89,19 @@ export default function Orders() {
           productId = match?.id || null;
         }
 
-        if (!productId) continue;
+        if (!productId) return null;
 
-        await base44.stock.adjustProductStock({ productId, delta: quantity });
-        appliedAdjustments.push({ productId, delta: quantity });
-      }
+        const shouldRestore = item.stock_deducted !== false;
+        if (!shouldRestore) return null;
+
+        try {
+          await base44.stock.adjustProductStock({ productId, delta: quantity });
+          await base44.stock.refreshProductCost(productId).catch(() => {});
+        } catch (stockError) {
+          console.warn('Falha ao restaurar estoque ao excluir pedido:', stockError);
+        }
+        return null;
+      }));
 
       await base44.entities.Order.delete(order.id);
       await logAction('Pedido Excluído', order.restaurant_name);

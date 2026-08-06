@@ -262,8 +262,9 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
         const product = prods.find(p => p.name === item.product_name);
         if (!product) continue;
         const restoreQty = (item.weight_kg != null && item.weight_kg !== '') ? parseFloat(item.weight_kg) : (parseFloat(item.quantity) || 0);
-        const nextStock = Math.max(0, Number(product.stock_quantity || 0) + restoreQty);
-        await base44.entities.Product.update(product.id, { stock_quantity: nextStock, available: nextStock > 0 }).catch(() => {});
+        if (!Number.isFinite(restoreQty) || restoreQty <= 0) continue;
+        await base44.stock.adjustProductStock({ productId: product.id, delta: restoreQty });
+        await base44.stock.refreshProductCost(product.id).catch(() => {});
       }
     }
 

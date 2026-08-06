@@ -31,16 +31,20 @@ export default function Sidebar({ open, onClose, userRole = 'admin' }) {
   useEffect(() => {
     const fetchCounts = async () => {
       try {
-        const orders = await base44.entities.Order.filter({ status: 'Pedido Emitido' });
-        setPendingCount(orders.length);
-      } catch {}
+        const orders = await base44.entities.Order.list('-created_date', 200);
+        setPendingCount(orders.filter(o => o.status !== 'Finalizado').length);
+      } catch {
+        setPendingCount(0);
+      }
       try {
         const u = await base44.auth.me();
         if (u && u.role === 'deliverer') {
           const all = await base44.entities.Order.list('-created_date', 200);
           setDeliveryCount(all.filter(o => o.deliverer_id === u.id && o.status !== 'Finalizado').length);
         }
-      } catch {}
+      } catch {
+        setDeliveryCount(0);
+      }
     };
     fetchCounts();
     const fetchExpirations = async () => {

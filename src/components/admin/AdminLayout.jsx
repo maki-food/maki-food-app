@@ -17,6 +17,7 @@ export default function AdminLayout() {
   const [notification, setNotification] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const lastOrderIdRef = useRef(null);
+  const pollingRef = useRef(null);
 
   useEffect(() => {
     base44.auth.me()
@@ -79,7 +80,7 @@ export default function AdminLayout() {
 
     const checkLatestOrder = async () => {
       try {
-        const recent = await base44.entities.Order.list('-created_date', 1);
+        const recent = await base44.entities.Order.list('-created_date', 5);
         if (!recent?.length) return;
         const latest = recent[0];
         if (!lastOrderIdRef.current) {
@@ -87,8 +88,9 @@ export default function AdminLayout() {
           return;
         }
         if (latest.id !== lastOrderIdRef.current) {
+          const previousId = lastOrderIdRef.current;
           lastOrderIdRef.current = latest.id;
-          if (user.role === 'admin' || user.role === 'seller') {
+          if (previousId && latest.id && (user.role === 'admin' || user.role === 'seller')) {
             notifyOrder('Novo Pedido!', `${latest.restaurant_name} • ${formatBRL(latest.total)}`);
           }
         }
@@ -99,6 +101,9 @@ export default function AdminLayout() {
 
     if (user.role !== 'deliverer') {
       checkLatestOrder();
+      pollingRef.current = window.setInterval(() => {
+        checkLatestOrder();
+      }, 5000);
     }
 
     const unsub = base44.entities.Order.subscribe((event) => {
@@ -108,7 +113,6 @@ export default function AdminLayout() {
       }
       if (event.type === 'create') {
         const o = event.data;
-        lastOrderIdRef.current = o.id;
         const isDelivererAssigned = user.role === 'deliverer' && o.deliverer_id === user.id;
         const isAdmin = user.role === 'admin' || user.role === 'seller';
         if (isAdmin || isDelivererAssigned) {
@@ -116,6 +120,7 @@ export default function AdminLayout() {
           const description = `${o.restaurant_name} • ${formatBRL(o.total)}`;
           notifyOrder(title, description);
         }
+        lastOrderIdRef.current = o.id;
       }
       if (event.type === 'update' && user.role !== 'deliverer') {
         const o = event.data;
@@ -137,6 +142,10 @@ export default function AdminLayout() {
     });
 
     return () => {
+      if (pollingRef.current) {
+        window.clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
       if (unsub) unsub();
     };
   }, [user]);

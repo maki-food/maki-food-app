@@ -52,8 +52,10 @@ function parseSort(sort) {
 
 function throwIfError(error) {
   if (error) {
-    const err = new Error(error.message || 'Erro no Supabase');
-    err.status = error.code;
+    const err = new Error(error?.message || 'Erro no Supabase');
+    err.status = error?.code || error?.status;
+    err.details = error?.details;
+    err.hint = error?.hint;
     err.data = error;
     throw err;
   }
@@ -92,8 +94,11 @@ function makeEntity(tableName) {
     },
 
     async create(payload) {
-      const { data, error } = await supabase.from(tableName).insert(payload).select().single();
+      const { data, error } = await supabase.from(tableName).insert(payload).select();
       throwIfError(error);
+      if (Array.isArray(data)) {
+        return data.length === 1 ? data[0] : data;
+      }
       return data;
     },
 
@@ -347,71 +352,305 @@ const integrations = {
 const stock = {
   // Dá entrada em um novo lote de um produto (usado nas Compras)
   async addBatch({ productId, quantity, expirationDate, purchaseId, variantId }) {
-    const { data, error } = await supabase.rpc('add_stock_batch', {
-      p_product_id: productId,
-      p_quantity: quantity,
-      p_expiration_date: expirationDate || null,
-      p_purchase_id: purchaseId || null,
-      p_variant_id: variantId || null,
+    const normalizedQuantity = Number(quantity || 0);
+    if (!productId || !Number.isFinite(normalizedQuantity) || normalizedQuantity <= 0) {
+      return null;
+    }
+
+    const { data: currentProduct, error: currentProductError } = await supabase
+      .from('products')
+      .select('stock_quantity')
+      .eq('id', productId)
+      .maybeSingle();
+
+    if (currentProductError) {
+      throwIfError(currentProductError);
+    }
+
+    const previousStock = Number(currentProduct?.stock_quantity || 0);
+
+    const { data: batch, error: batchError } = await supabase
+      .from('product_batches')
+      .insert({
+        product_id: productId,
+        quantity: normalizedQuantity,
+        expiration_date: expirationDate || null,
+        purchase_id: purchaseId || null,
+        variant_id: variantId || null,
+      })
+      .select()
+      .maybeSingle();
+
+    if (batchError) {
+      throwIfError(batchError);
+    }
+
+    const { data: updatedProduct, error: updatedProductError } = await supabase
+      .from('products')
+      .select('stock_quantity')
+      .eq('id', productId)
+      .maybeSingle();
+
+    if (updatedProductError) {
+      throwIfError(updatedProductError);
+    }
+
+    const updatedStock = Number(updatedProduct?.stock_quantity || 0);
+    const stockDelta = updatedStock - previousStock;
+
+    if (stockDelta === 0) {
+      const adjustmentResult = await stock.adjustProductStock({ productId, delta: normalizedQuantity });
+      if (!adjustmentResult) {
+        throw new Error(`Falha ao atualizar estoque do produto ${productId} após adicionar lote.`);
+      }
+    } else if (stockDelta !== normalizedQuantity) {
+      console.warn(`Ajuste de estoque inesperado para produto ${productId}: delta do banco ${stockDelta}, esperado ${normalizedQuantity}.`);
+    }
+
+    await stock.refreshProductCost(productId).catch((err) => {
+      console.warn('Não foi possível atualizar o custo do produto após adicionar lote:', err);
     });
+    return batch;
+  },
+
+  // Baixa estoque automaticamente pelos lotes que vencem primeiro (FEFO), usando a quantidade exata informada.
+  async deductFefo({ productId, quantity }) {
+    const normalizedQuantity = Number(quantity || 0);
+    if (!productId || !Number.isFinite(normalizedQuantity) || normalizedQuantity <= 0) {
+      return null;
+    }
+
+    const { data: currentProduct, error: productError } = await supabase
+      .from('products')
+      .select('id, stock_quantity')
+      .eq('id', productId)
+      .maybeSingle();
+    throwIfError(productError);
+
+    if (!currentProduct) {
+      throw new Error(`Produto ${productId} não encontrado ao tentar dar baixa FEFO.`);
+    }
+
+    const currentStock = Number(currentProduct.stock_quantity || 0);
+    if (normalizedQuantity > currentStock) {
+      throw new Error(`Estoque insuficiente para baixa FEFO. Disponível: ${currentStock}, solicitado: ${normalizedQuantity}.`);
+    }
+
+    let updatedBatches = [];
+    let batchDeductionSucceeded = false;
+
+    try {
+      const { data: batches, error: batchError } = await supabase
+        .from('product_batches')
+        .select('id, quantity, expiration_date')
+        .eq('product_id', productId)
+        .gt('quantity', 0);
+
+      if (!batchError && Array.isArray(batches) && batches.length > 0) {
+        const sortedBatches = batches.slice().sort((a, b) => {
+          const aDate = a?.expiration_date ? new Date(a.expiration_date).getTime() : Number.MAX_SAFE_INTEGER;
+          const bDate = b?.expiration_date ? new Date(b.expiration_date).getTime() : Number.MAX_SAFE_INTEGER;
+          return aDate - bDate;
+        });
+
+        let remaining = normalizedQuantity;
+        for (const batch of sortedBatches) {
+          if (remaining <= 0) break;
+          const batchQuantity = Number(batch.quantity || 0);
+          if (batchQuantity <= 0) continue;
+
+          const consume = Math.min(batchQuantity, remaining);
+          const { data: updatedBatch, error: updateError } = await supabase
+            .from('product_batches')
+            .update({ quantity: batchQuantity - consume })
+            .eq('id', batch.id)
+            .select()
+            .maybeSingle();
+
+          if (updateError) {
+            throw updateError;
+          }
+
+          updatedBatches.push(updatedBatch);
+          remaining -= consume;
+        }
+
+        batchDeductionSucceeded = updatedBatches.length > 0 && remaining <= 0;
+      }
+    } catch (batchErr) {
+      console.warn('Baixa FEFO por lotes não foi possível; usando fallback de estoque total:', batchErr);
+      updatedBatches = [];
+      batchDeductionSucceeded = false;
+    }
+
+    const adjustedStock = await stock.adjustProductStock({ productId, delta: -normalizedQuantity });
+    if (!adjustedStock) {
+      throw new Error(`Falha ao atualizar o estoque total do produto ${productId} após baixa FEFO.`);
+    }
+
+    await stock.refreshProductCost(productId).catch((err) => {
+      console.warn('Não foi possível atualizar o custo do produto após baixa FEFO:', err);
+    });
+
+    return {
+      productId,
+      quantity: normalizedQuantity,
+      updatedBatches,
+      usedFallback: !batchDeductionSucceeded,
+    };
+  },
+
+  async refreshProductCost(productId) {
+    if (!productId) return null;
+
+    const { data: batches, error: batchesError } = await supabase
+      .from('product_batches')
+      .select('id, product_id, quantity, expiration_date, purchase_id')
+      .eq('product_id', productId)
+      .gt('quantity', 0)
+      .order('expiration_date', { ascending: true, nullsFirst: false });
+    throwIfError(batchesError);
+
+    if (!batches || batches.length === 0) {
+      const newCost = 0;
+      const { data, error } = await supabase
+        .from('products')
+        .update({ purchase_cost: newCost })
+        .eq('id', productId)
+        .select()
+        .maybeSingle();
+      throwIfError(error);
+      return data;
+    }
+
+    const activeBatch = batches[0];
+    if (!activeBatch || !activeBatch.purchase_id) {
+      const newCost = 0;
+      const { data, error } = await supabase
+        .from('products')
+        .update({ purchase_cost: newCost })
+        .eq('id', productId)
+        .select()
+        .maybeSingle();
+      throwIfError(error);
+      return data;
+    }
+
+    const { data: purchase, error: purchaseError } = await supabase
+      .from('purchases')
+      .select('*')
+      .eq('id', activeBatch.purchase_id)
+      .maybeSingle();
+    throwIfError(purchaseError);
+    if (!purchase) {
+      const newCost = 0;
+      const { data, error } = await supabase
+        .from('products')
+        .update({ purchase_cost: newCost })
+        .eq('id', productId)
+        .select()
+        .maybeSingle();
+      throwIfError(error);
+      return data;
+    }
+
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .select('name')
+      .eq('id', productId)
+      .maybeSingle();
+    throwIfError(productError);
+    if (!product) {
+      const newCost = 0;
+      const { data, error } = await supabase
+        .from('products')
+        .update({ purchase_cost: newCost })
+        .eq('id', productId)
+        .select()
+        .maybeSingle();
+      throwIfError(error);
+      return data;
+    }
+
+    const batchItem = Array.isArray(purchase.products)
+      ? purchase.products.find((item) => item.product_id === productId) || purchase.products.find((item) => item.product_name === product.name)
+      : null;
+
+    let newCost = 0;
+    if (batchItem) {
+      const parsedPrice = parseFloat(batchItem.price);
+      if (Number.isFinite(parsedPrice) && parsedPrice > 0) {
+        newCost = parsedPrice;
+      } else {
+        const quantity = parseFloat(batchItem.quantity) || 0;
+        const totalCost = parseFloat(batchItem.total_cost) || 0;
+        newCost = quantity > 0 ? totalCost / quantity : 0;
+      }
+    }
+
+    newCost = Number(newCost.toFixed(2));
+    const { data, error } = await supabase
+      .from('products')
+      .update({ purchase_cost: newCost })
+      .eq('id', productId)
+      .select()
+      .maybeSingle();
     throwIfError(error);
     return data;
   },
 
-  // Baixa estoque automaticamente pelos lotes que vencem primeiro (FEFO).
-  async deductFefo({ productId, quantity }) {
-    const { data, error } = await supabase.rpc('deduct_stock_fefo', {
-      p_product_id: productId,
-      p_quantity: quantity,
-    });
-    if (error) {
-      console.error('Error in deductFefo:', error);
-      throw error;
-    }
-    return data;
-  },
-
   async decrementStock({ productId, quantity }) {
-    const { data, error } = await supabase.rpc('decrement_product_stock', {
-      p_product_id: productId,
-      p_quantity: quantity,
-    });
-    if (error) {
-      console.error('Error in decrementStock:', error);
-      throw error;
+    const normalizedQuantity = Number(quantity || 0);
+    if (!productId || !Number.isFinite(normalizedQuantity) || normalizedQuantity <= 0) {
+      return null;
     }
-    return data;
+    return stock.adjustProductStock({ productId, delta: -normalizedQuantity });
   },
 
-  async adjustProductStock({ productId, delta }) {
+  async adjustProductStock({ productId, delta, unit }) {
     const normalizedDelta = Number(delta || 0);
     if (!productId || !Number.isFinite(normalizedDelta) || normalizedDelta === 0) {
       return null;
     }
 
-    const { data: currentProduct, error: fetchError } = await supabase
-      .from('products')
-      .select('id, stock_quantity, available')
-      .eq('id', productId)
-      .maybeSingle();
+    try {
+      const { data: currentProduct, error: fetchError } = await supabase
+        .from('products')
+        .select('id, stock_quantity, available, unit')
+        .eq('id', productId)
+        .maybeSingle();
 
-    throwIfError(fetchError);
+      if (fetchError) {
+        console.warn('Falha ao buscar produto para ajustar estoque:', fetchError);
+        return null;
+      }
 
-    if (!currentProduct) {
-      throw new Error(`Produto ${productId} não encontrado para ajustar o estoque.`);
+      if (!currentProduct) {
+        return null;
+      }
+
+      const productUnit = String(unit || currentProduct.unit || 'un').trim().toLowerCase();
+      const isWeightUnit = ['kg', 'g', 'litro', 'l', 'ml'].includes(productUnit);
+      const parsedDelta = isWeightUnit ? Number(normalizedDelta) : Number(Math.round(normalizedDelta));
+      const nextStock = Math.max(0, Number(currentProduct.stock_quantity || 0) + parsedDelta);
+
+      const { data, error } = await supabase
+        .from('products')
+        .update({ stock_quantity: nextStock, available: nextStock > 0 })
+        .eq('id', productId)
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        console.warn('Falha ao atualizar estoque do produto:', error);
+        return null;
+      }
+
+      return data;
+    } catch (err) {
+      console.warn('Erro inesperado ao ajustar estoque:', err);
+      return null;
     }
-
-    const nextStock = Math.max(0, Number(currentProduct.stock_quantity || 0) + normalizedDelta);
-
-    const { data, error } = await supabase
-      .from('products')
-      .update({ stock_quantity: nextStock, available: nextStock > 0 })
-      .eq('id', productId)
-      .select()
-      .single();
-
-    throwIfError(error);
-    return data;
   },
 
   // Lista os lotes de um produto, do que vence primeiro para o que vence por último

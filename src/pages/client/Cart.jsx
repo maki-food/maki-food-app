@@ -130,14 +130,9 @@ export default function Cart() {
   };
 
   const generateInvoiceNumber = async () => {
-    const allOrders = await base44.entities.Order.list('-created_date', 200);
-    const nfNumbers = allOrders
-      .map(o => o.invoice_number)
-      .filter(nf => nf && nf.startsWith('NF-'))
-      .map(nf => parseInt(nf.replace('NF-', ''), 10))
-      .filter(n => !isNaN(n));
-    const maxNum = nfNumbers.length > 0 ? Math.max(...nfNumbers) : 1000;
-    return `NF-${maxNum + 1}`;
+    const timestamp = Date.now().toString();
+    const randomSuffix = Math.floor(Math.random() * 900) + 100;
+    return `NF-${timestamp.slice(-8)}-${randomSuffix}`;
   };
 
   const handleCheckout = async (e) => {
@@ -163,6 +158,11 @@ export default function Cart() {
 
     setSubmitting(true);
     try {
+      const currentUser = authUser || user || await base44.auth.me().catch(() => null);
+      if (!currentUser?.id) {
+        throw new Error('Você precisa estar autenticado para finalizar o pedido.');
+      }
+
       const orderItems = items.map(i => {
         const isWeightProduct = i.unit && ['kg', 'g', 'litro', 'L', 'mL'].includes(i.unit);
         const unitWeight = i.weight_per_unit_kg != null ? Number(i.weight_per_unit_kg) : null;
@@ -182,47 +182,82 @@ export default function Cart() {
           variant_name: i.variant_name || null,
           weight_kg: effectiveWeight,
           weight_per_unit_kg: unitWeight,
+          stock_deducted: false,
         };
       });
 
-      // Reduz o estoque de cada produto via RPC segura no banco antes de criar o pedido
       for (const item of orderItems) {
-        if (!item.product_id) continue;
+        if (!item.product_id) {
+          throw new Error(`O item ${item.product_name} não está vinculado a um produto do estoque e não pode ser enviado.`);
+        }
 
         const qtyToDeduct = Number(item.weight_kg != null ? item.weight_kg : item.quantity || 0);
-        if (qtyToDeduct <= 0) continue;
-
-        const result = await base44.stock.decrementStock({
-          productId: item.product_id,
-          quantity: qtyToDeduct,
-        });
-
-        if (result === false) {
-          throw new Error(`Estoque insuficiente para ${item.product_name}`);
+        if (qtyToDeduct <= 0) {
+          throw new Error(`Quantidade inválida para ${item.product_name}.`);
         }
       }
 
+      const restaurantName = restaurant?.restaurant_name || profileForm.restaurant_name || currentUser?.full_name || 'Cliente';
+      const restaurantCnpj = restaurant?.cnpj || profileForm.cnpj || '';
+      const contactInfo = restaurant?.contact_number || profileForm.contact_number || currentUser?.contact_number || '';
+      const deliveryAddress = checkoutForm.delivery_address || buildFullAddress(restaurant || profileForm);
+
       const invoiceNumber = await generateInvoiceNumber();
       const createdOrder = await base44.entities.Order.create({
-        created_by_id: user.id,
-        restaurant_name: restaurant.restaurant_name,
-        restaurant_cnpj: restaurant.cnpj || '',
+        created_by_id: currentUser.id,
+        restaurant_name: restaurantName,
+        restaurant_cnpj: restaurantCnpj,
         invoice_number: invoiceNumber,
         status: 'Pedido Emitido',
-        delivery_address: checkoutForm.delivery_address,
+        delivery_address: deliveryAddress,
         payment_method: checkoutForm.payment_method,
-        contact_info: restaurant.contact_number,
+        contact_info: contactInfo,
         observations: checkoutForm.observations,
         items: orderItems,
         total: grandTotal,
         shipping_fee: shippingFee,
       });
 
-      await logAction('Pedido Criado', `${restaurant.restaurant_name} - ${formatBRL(grandTotal)} - Pedido #${createdOrder?.invoice_number || '-'}`);
+      toast({
+        title: 'Pedido enviado',
+        description: 'Seu pedido foi registrado e está sendo processado.',
+      });
+
+      void logAction('Pedido Criado', `${restaurant.restaurant_name} - ${formatBRL(grandTotal)} - Pedido #${createdOrder?.invoice_number || '-'}`);
+
+      void (async () => {
+        const deductionResults = await Promise.allSettled(orderItems.map(async (item) => {
+          const qtyToDeduct = Number(item.weight_kg != null ? item.weight_kg : item.quantity || 0);
+          if (!item.product_id || qtyToDeduct <= 0) {
+            return null;
+          }
+
+          return base44.stock.deductFefo({
+            productId: item.product_id,
+            quantity: qtyToDeduct,
+          });
+        }));
+
+        const updatedItems = orderItems.map((item, index) => ({
+          ...item,
+          stock_deducted: deductionResults[index]?.status === 'fulfilled',
+        }));
+
+        if (createdOrder?.id) {
+          await base44.entities.Order.update(createdOrder.id, { items: updatedItems }).catch((err) => {
+            console.warn('Não foi possível atualizar o status de baixa de estoque do pedido:', err);
+          });
+        }
+
+        const failedDeductions = deductionResults.filter(result => result.status === 'rejected');
+        if (failedDeductions.length > 0) {
+          console.warn('Falha em uma ou mais baixas de estoque:', failedDeductions);
+        }
+      })();
 
       clearCart();
       setSuccess(true);
-      setTimeout(() => navigate('/loja/pedidos'), 2500);
+      setTimeout(() => navigate('/loja/pedidos'), 1000);
     } catch (err) {
       console.error('Error creating order:', err);
       toast({

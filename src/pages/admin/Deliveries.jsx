@@ -3,6 +3,7 @@ import { base44 } from '@/api/supabaseClient';
 import { formatBRL, formatDate, getOrderDisplayItems, getOrderItemQuantityLabel, getOrderItemSubtotal } from '@/lib/format';
 import { logAction } from '@/lib/audit';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Loader2, MapPin, CreditCard, Phone, Package, Camera, Truck, CheckCircle, Clock, Bike, ExternalLink } from 'lucide-react';
 
 export default function Deliveries() {
@@ -11,6 +12,26 @@ export default function Deliveries() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(null);
   const [completedOrders, setCompletedOrders] = useState([]);
+  const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
+  const [sequenceByOrderId, setSequenceByOrderId] = useState({});
+
+  const loadOrders = async (currentUser) => {
+    if (!currentUser) return;
+    try {
+      const all = await base44.entities.Order.list('-created_date', 200);
+      const mine = all.filter(o => o.deliverer_id === currentUser.id);
+      const active = mine.filter(o => o.status !== 'Finalizado');
+      setOrders(active);
+      setCompletedOrders(mine.filter(o => o.status === 'Finalizado' && isToday(o.delivery_completed_at || o.updated_date || o.created_date)));
+      setSequenceByOrderId(Object.fromEntries(active.map(o => [o.id, o.delivery_sequence != null ? String(o.delivery_sequence) : ''])));
+    } catch (fetchError) {
+      console.error('Erro ao carregar entregas:', fetchError);
+      setOrders([]);
+      setCompletedOrders([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const isToday = (date) => {
     if (!date) return false;
@@ -23,50 +44,51 @@ export default function Deliveries() {
 
   useEffect(() => {
     let unsub;
-    let syncTimer;
     let active = true;
-    base44.auth.me().then(u => {
-      if (!active) return;
-      setUser(u);
-      const load = async () => {
-        try {
-          const all = await base44.entities.Order.list('-created_date', 200);
-          if (!active) return;
-          const mine = all.filter(o => o.deliverer_id === u.id);
-          setOrders(mine.filter(o => o.status !== 'Finalizado'));
-          setCompletedOrders(mine.filter(o => o.status === 'Finalizado' && isToday(o.delivery_completed_at || o.updated_date || o.created_date)));
-        } catch {}
-        if (active) setLoading(false);
-      };
-      load();
-      unsub = base44.entities.Order.subscribe((event) => {
+
+    const init = async () => {
+      try {
+        const u = await base44.auth.me();
         if (!active) return;
-        if (event.type === 'refresh') {
-          load();
-          return;
-        }
-        if (event.type === 'update' && event.data.deliverer_id === u.id && event.data.status === 'Finalizado') {
-          setOrders(prev => prev.filter(o => o.id !== event.data.id));
-          setCompletedOrders(prev => [event.data, ...prev.filter(o => o.id !== event.data.id)].filter(o => isToday(o.delivery_completed_at || o.updated_date || o.created_date)));
-          return;
-        }
-        setOrders(prev => {
-          if (event.type === 'create') {
-            if (event.data.deliverer_id === u.id && event.data.status !== 'Finalizado' && !prev.some(o => o.id === event.data.id)) return [event.data, ...prev];
+        setUser(u);
+        await loadOrders(u);
+
+        unsub = base44.entities.Order.subscribe((event) => {
+          if (!active) return;
+          if (event.type === 'refresh') {
+            loadOrders(u);
+            return;
+          }
+          if (event.type === 'update' && event.data.deliverer_id === u.id && event.data.status === 'Finalizado') {
+            setOrders(prev => prev.filter(o => o.id !== event.data.id));
+            setCompletedOrders(prev => [event.data, ...prev.filter(o => o.id !== event.data.id)].filter(o => isToday(o.delivery_completed_at || o.updated_date || o.created_date)));
+            return;
+          }
+          setOrders(prev => {
+            if (event.type === 'create') {
+              if (event.data.deliverer_id === u.id && event.data.status !== 'Finalizado' && !prev.some(o => o.id === event.data.id)) return [event.data, ...prev];
+              return prev;
+            }
+            if (event.type === 'update') {
+              if (event.data.deliverer_id !== u.id || event.data.status === 'Finalizado') return prev.filter(o => o.id !== event.data.id);
+              const alreadyListed = prev.some(o => o.id === event.data.id);
+              if (!alreadyListed) return [event.data, ...prev];
+              return prev.map(o => o.id === event.data.id ? { ...o, ...event.data } : o);
+            }
+            if (event.type === 'delete') return prev.filter(o => o.id !== event.id);
             return prev;
-          }
-          if (event.type === 'update') {
-            if (event.data.deliverer_id !== u.id || event.data.status === 'Finalizado') return prev.filter(o => o.id !== event.data.id);
-            const alreadyListed = prev.some(o => o.id === event.data.id);
-            if (!alreadyListed) return [event.data, ...prev];
-            return prev.map(o => o.id === event.data.id ? { ...o, ...event.data } : o);
-          }
-          if (event.type === 'delete') return prev.filter(o => o.id !== event.id);
-          return prev;
+          });
+          if (event.type === 'delete') setCompletedOrders(prev => prev.filter(o => o.id !== event.id));
         });
-        if (event.type === 'delete') setCompletedOrders(prev => prev.filter(o => o.id !== event.id));
-      });
-    }).catch(() => { if (active) setLoading(false); });
+      } catch (initError) {
+        console.error('Erro no painel de entregas:', initError);
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    init();
     return () => { active = false; if (unsub) unsub(); };
   }, []);
 
@@ -86,6 +108,47 @@ export default function Deliveries() {
     }
     await base44.entities.Order.update(order.id, updates);
     await logAction('Entrega Atualizada', `${order.restaurant_name}: ${newStatus}`);
+    if (user) await loadOrders(user);
+  };
+
+  const updateSequenceValue = (orderId, value) => {
+    setSequenceByOrderId((prev) => ({
+      ...prev,
+      [orderId]: value,
+    }));
+  };
+
+  const saveOrderSequence = async (order) => {
+    const rawValue = sequenceByOrderId[order.id];
+    const sequence = rawValue !== '' ? Math.max(1, Number(rawValue) || 1) : null;
+    await base44.entities.Order.update(order.id, {
+      delivery_sequence: sequence,
+    });
+    await logAction('Ordem de Entrega Atualizada', `${order.restaurant_name}: posição ${sequence || 'não definida'}`);
+    if (user) await loadOrders(user);
+  };
+
+  const toggleOrderSelection = (orderId) => {
+    setSelectedOrderIds((prev) => {
+      const copy = new Set(prev);
+      if (copy.has(orderId)) copy.delete(orderId);
+      else copy.add(orderId);
+      return copy;
+    });
+  };
+
+  const markSelectedAsOnTheWay = async () => {
+    if (!selectedOrderIds.size) return;
+    const updates = Array.from(selectedOrderIds).map((id) =>
+      base44.entities.Order.update(id, {
+        delivery_status: 'Saiu para Entrega',
+        status: 'Saiu para Entrega',
+      })
+    );
+    await Promise.all(updates);
+    await logAction('Entregas Marcadas como Saiu para Entrega', `Pedidos: ${Array.from(selectedOrderIds).join(', ')}`);
+    setSelectedOrderIds(new Set());
+    if (user) await loadOrders(user);
   };
 
   const handleUpload = async (order, file) => {
@@ -123,6 +186,17 @@ export default function Deliveries() {
         </div>
       ) : (
         <div className="space-y-4">
+          {selectedOrderIds.size > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div>
+                <p className="text-sm font-medium text-slate-900">{selectedOrderIds.size} entrega(s) selecionada(s)</p>
+                <p className="text-sm text-slate-500">Marque como Saiu para Entrega quando a rota estiver definida.</p>
+              </div>
+              <Button onClick={markSelectedAsOnTheWay} className="bg-purple-600 hover:bg-purple-700">
+                Marcar selecionados como Saiu para Entrega
+              </Button>
+            </div>
+          )}
           {orders.map(order => {
             const cfg = statusConfig[order.delivery_status] || statusConfig['Pendente'];
             const StatusIcon = cfg.icon;
@@ -132,10 +206,18 @@ export default function Deliveries() {
             return (
               <div key={order.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 <div className="p-4 border-b border-slate-100">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-slate-900">{order.restaurant_name}</p>
-                      <p className="text-xs text-slate-500">{formatDate(order.created_date)} • {itemCount} itens • {formatBRL(order.total)}</p>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={selectedOrderIds.has(order.id)}
+                        onChange={() => toggleOrderSelection(order.id)}
+                        className="h-4 w-4 text-purple-600 rounded border-slate-300"
+                      />
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 truncate">{order.restaurant_name}</p>
+                        <p className="text-xs text-slate-500">{formatDate(order.created_date)} • {itemCount} itens • {formatBRL(order.total)}</p>
+                      </div>
                     </div>
                     <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full ${cfg.bg}`}>
                       <StatusIcon className={`w-4 h-4 ${cfg.color}`} />
@@ -145,6 +227,25 @@ export default function Deliveries() {
                 </div>
 
                 <div className="p-4 space-y-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto] items-end">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        step="1"
+                        min="1"
+                        placeholder="Posição"
+                        value={sequenceByOrderId[order.id] || ''}
+                        onChange={(e) => updateSequenceValue(order.id, e.target.value)}
+                        className="max-w-[100px]"
+                      />
+                      <Button onClick={() => saveOrderSequence(order)} variant="outline" className="h-9">
+                        Salvar posição
+                      </Button>
+                    </div>
+                    {order.delivery_sequence != null && (
+                      <span className="text-sm text-slate-500">Ordem atual: {order.delivery_sequence}</span>
+                    )}
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                     <div className="flex items-start gap-2 text-slate-600">
                       <MapPin className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />

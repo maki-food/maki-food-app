@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { supabase, base44 } from '@/api/supabaseClient';
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -91,7 +91,20 @@ export const AuthProvider = ({ children }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    return {
+      user: null,
+      isAuthenticated: false,
+      isLoadingAuth: false,
+      isLoadingPublicSettings: false,
+      authError: null,
+      appPublicSettings: null,
+      authChecked: true,
+      restaurantProfile: null,
+      logout: async () => {},
+      navigateToLogin: () => {},
+      checkUserAuth: async () => {},
+      checkAppState: async () => {},
+    };
   }
   return context;
 };

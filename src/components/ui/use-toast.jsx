@@ -19,6 +19,7 @@ function genId() {
 }
 
 const toastTimeouts = new Map();
+const autoDismissTimeouts = new Map();
 
 const addToRemoveQueue = (toastId) => {
   if (toastTimeouts.has(toastId)) {
@@ -34,6 +35,18 @@ const addToRemoveQueue = (toastId) => {
   }, TOAST_REMOVE_DELAY);
 
   toastTimeouts.set(toastId, timeout);
+};
+
+const scheduleAutoDismiss = (toastId, duration) => {
+  if (duration == null || duration <= 0) return;
+  if (autoDismissTimeouts.has(toastId)) return;
+
+  const timeout = setTimeout(() => {
+    autoDismissTimeouts.delete(toastId);
+    dispatch({ type: actionTypes.DISMISS_TOAST, toastId });
+  }, duration);
+
+  autoDismissTimeouts.set(toastId, timeout);
 };
 
 const _clearFromRemoveQueue = (toastId) => {
@@ -120,9 +133,15 @@ function toast({ ...props }) {
     });
 
   const dismiss = () => {
+    if (autoDismissTimeouts.has(id)) {
+      clearTimeout(autoDismissTimeouts.get(id));
+      autoDismissTimeouts.delete(id);
+    }
     dispatch({ type: actionTypes.DISMISS_TOAST, toastId: id });
     dispatch({ type: actionTypes.REMOVE_TOAST, toastId: id });
   };
+
+  const duration = props.duration ?? 5000;
 
   dispatch({
     type: actionTypes.ADD_TOAST,
@@ -130,11 +149,10 @@ function toast({ ...props }) {
       ...props,
       id,
       open: true,
-      onOpenChange: (open) => {
-        if (!open) dismiss();
-      },
     },
   });
+
+  scheduleAutoDismiss(id, duration);
 
   return {
     id,

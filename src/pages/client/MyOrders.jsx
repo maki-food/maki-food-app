@@ -59,13 +59,34 @@ export default function MyOrders() {
     );
   }
 
-  const active = orders.filter(o => o.status !== 'Finalizado');
-  const finalized = orders.filter(o => o.status === 'Finalizado');
+  const sortByDeliverySequence = (a, b) => {
+    if (a.delivery_sequence == null && b.delivery_sequence == null) {
+      return new Date(b.created_date) - new Date(a.created_date);
+    }
+    if (a.delivery_sequence == null) return 1;
+    if (b.delivery_sequence == null) return -1;
+    return Number(a.delivery_sequence) - Number(b.delivery_sequence);
+  };
+
+  const active = orders.filter(o => o.status !== 'Finalizado').sort(sortByDeliverySequence);
+  const finalized = orders.filter(o => o.status === 'Finalizado').sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
   const ordersToShow = selectedTab === 'active' ? active : finalized;
   const showLoadingOrders = loading && !user;
 
+  const getDeliverySequenceMessage = (order) => {
+    if (!order.delivery_sequence) return null;
+    if (order.status === 'Saiu para Entrega') {
+      return `Entrega em rota — sua ordem está na posição ${order.delivery_sequence} da sequência.`;
+    }
+    if (order.status === 'Com Entregador' || order.delivery_status === 'Aceito') {
+      return `Ordem recebida pelo entregador — posição ${order.delivery_sequence} na sequência de entrega.`;
+    }
+    return `Ordem definida na posição ${order.delivery_sequence} da rota de entrega.`;
+  };
+
   const renderOrder = (order) => {
     const isExpanded = expanded === order.id;
+    const sequenceMessage = getDeliverySequenceMessage(order);
     return (
       <div key={order.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-3">
         <button
@@ -78,6 +99,7 @@ export default function MyOrders() {
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-slate-900 truncate">{order.invoice_number || `Pedido #${order.id?.slice(-6).toUpperCase()}`}</p>
             <p className="text-xs text-slate-500">{formatDate(order.created_date)} • {(order.items || []).length} itens</p>
+            {sequenceMessage && <p className="text-xs text-emerald-600 mt-1 truncate">{sequenceMessage}</p>}
           </div>
           <StatusBadge status={order.status} />
           <p className="font-bold text-slate-900 hidden sm:block">{formatBRL(order.total)}</p>

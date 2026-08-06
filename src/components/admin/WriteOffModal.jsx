@@ -42,7 +42,11 @@ export default function WriteOffModal({ open, onClose, products = [], onSave }) 
         reason,
         notes,
       });
-      await base44.stock.deductFefo({ productId: selectedProduct.id, quantity: parseFloat(quantity) || 0 });
+      await base44.stock.adjustProductStock({
+        productId: selectedProduct.id,
+        delta: -(parseFloat(quantity) || 0),
+        unit: selectedProduct.unit,
+      });
       await logAction('Baixa de Estoque', `${selectedProduct.name}: ${quantity} (${reason})`);
       onSave?.();
       onClose();
