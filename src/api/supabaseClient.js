@@ -460,11 +460,11 @@ const stock = {
           if (batchQuantity <= 0) continue;
 
           const consume = Math.min(batchQuantity, remaining);
+          // Mesma proteção do adjustProductStock: UPDATE atômico via RPC em vez de
+          // "li X, calculei X-consume, escrevi" (que também sofre race condition
+          // se dois pedidos consumirem o mesmo lote ao mesmo tempo).
           const { data: updatedBatch, error: updateError } = await supabase
-            .from('product_batches')
-            .update({ quantity: batchQuantity - consume })
-            .eq('id', batch.id)
-            .select()
+            .rpc('decrement_batch_quantity', { p_batch_id: batch.id, p_amount: consume })
             .maybeSingle();
 
           if (updateError) {
@@ -607,6 +607,13 @@ const stock = {
     return stock.adjustProductStock({ productId, delta: -normalizedQuantity });
   },
 
+  // IMPORTANTE: este ajuste é feito via RPC atômica no Postgres (fn adjust_product_stock).
+  // NUNCA volte a fazer SELECT stock_quantity -> calcular em JS -> UPDATE aqui.
+  // Esse padrão (ler, calcular, escrever) tem race condition: duas chamadas concorrentes
+  // leem o mesmo valor antigo e uma sobrescreve a outra, corrompendo o estoque.
+  // A função SQL faz `stock_quantity = stock_quantity + delta` dentro do próprio UPDATE,
+  // então o Postgres serializa (lock de linha) e cada chamada sempre parte do valor
+  // já confirmado pela chamada anterior. Ver: supabase_migration_stock_atomic.sql
   async adjustProductStock({ productId, delta, unit }) {
     const normalizedDelta = Number(delta || 0);
     if (!productId || !Number.isFinite(normalizedDelta) || normalizedDelta === 0) {
@@ -614,31 +621,29 @@ const stock = {
     }
 
     try {
-      const { data: currentProduct, error: fetchError } = await supabase
-        .from('products')
-        .select('id, stock_quantity, available, unit')
-        .eq('id', productId)
-        .maybeSingle();
+      // Só precisamos do 'unit' para decidir se arredondamos o delta (produtos por
+      // unidade não podem ter estoque fracionado). Essa leitura NÃO participa da
+      // race condition porque não é usada para calcular o novo estoque.
+      let productUnit = unit;
+      if (!productUnit) {
+        const { data: currentProduct, error: fetchError } = await supabase
+          .from('products')
+          .select('unit')
+          .eq('id', productId)
+          .maybeSingle();
 
-      if (fetchError) {
-        console.warn('Falha ao buscar produto para ajustar estoque:', fetchError);
-        return null;
+        if (fetchError) {
+          console.warn('Falha ao buscar produto para ajustar estoque:', fetchError);
+          return null;
+        }
+        productUnit = currentProduct?.unit || 'un';
       }
 
-      if (!currentProduct) {
-        return null;
-      }
-
-      const productUnit = String(unit || currentProduct.unit || 'un').trim().toLowerCase();
-      const isWeightUnit = ['kg', 'g', 'litro', 'l', 'ml'].includes(productUnit);
-      const parsedDelta = isWeightUnit ? Number(normalizedDelta) : Number(Math.round(normalizedDelta));
-      const nextStock = Math.max(0, Number(currentProduct.stock_quantity || 0) + parsedDelta);
+      const isWeightUnit = ['kg', 'g', 'litro', 'l', 'ml'].includes(String(productUnit).trim().toLowerCase());
+      const parsedDelta = isWeightUnit ? normalizedDelta : Math.round(normalizedDelta);
 
       const { data, error } = await supabase
-        .from('products')
-        .update({ stock_quantity: nextStock, available: nextStock > 0 })
-        .eq('id', productId)
-        .select()
+        .rpc('adjust_product_stock', { p_product_id: productId, p_delta: parsedDelta })
         .maybeSingle();
 
       if (error) {

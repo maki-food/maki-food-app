@@ -237,41 +237,24 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
     setItems(prev => prev.filter((_, i) => i !== idx));
   };
 
+  // ATENÇÃO: a baixa de estoque acontece SOMENTE uma vez, no momento em que o
+  // cliente confirma o pedido (src/pages/client/Cart.jsx -> handleCheckout).
+  // A devolução de estoque acontece SOMENTE ao excluir o pedido
+  // (src/pages/admin/Orders.jsx -> handleDelete).
+  // Mudar o status aqui (inclusive para "Finalizado") NUNCA deve tocar em
+  // estoque — antes esta função baixava de novo ao marcar "Finalizado" e
+  // devolvia de novo ao tirar de "Finalizado", causando baixa/devolução
+  // duplicada em cima do que o checkout já tinha feito. Não reintroduza essa
+  // lógica aqui sem alinhar antes — é a causa raiz do estoque incorreto.
   const changeStatus = async (status) => {
-    if (status === 'Finalizado' && order.status !== 'Finalizado') {
-      const prods = await base44.entities.Product.list();
-      for (const item of (order.items || [])) {
-        const product = prods.find(p => p.name === item.product_name);
-        if (product) {
-          const deductQty = (item.weight_kg != null && item.weight_kg !== '') ? parseFloat(item.weight_kg) : (parseFloat(item.quantity) || 0);
-          await base44.stock.deductFefo({ productId: product.id, quantity: deductQty });
-          await base44.entities.InventoryWriteOff.create({
-            product_name: item.product_name,
-            product_id: product.id,
-            quantity: deductQty,
-            reason: 'Venda',
-            notes: `Pedido ${order.invoice_number || order.id}${item.variant_name ? ` (${item.variant_name})` : ''}`,
-          });
-        }
-      }
-    }
-
-    if (status !== 'Finalizado' && order.status === 'Finalizado') {
-      const prods = await base44.entities.Product.list();
-      for (const item of (order.items || [])) {
-        const product = prods.find(p => p.name === item.product_name);
-        if (!product) continue;
-        const restoreQty = (item.weight_kg != null && item.weight_kg !== '') ? parseFloat(item.weight_kg) : (parseFloat(item.quantity) || 0);
-        if (!Number.isFinite(restoreQty) || restoreQty <= 0) continue;
-        await base44.stock.adjustProductStock({ productId: product.id, delta: restoreQty });
-        await base44.stock.refreshProductCost(product.id).catch(() => {});
-      }
-    }
-
-    await base44.entities.Order.update(order.id, {
+    const nextPayload = {
       status,
-      ...(status === 'Finalizado' ? { delivery_completed_at: new Date().toISOString() } : {}),
-    });
+      ...(status === 'Finalizado'
+        ? { delivery_completed_at: new Date().toISOString(), delivery_status: 'Finalizado' }
+        : { delivery_status: 'Pendente' }),
+    };
+
+    await base44.entities.Order.update(order.id, nextPayload);
     await logAction('Status do Pedido Alterado', `${order.restaurant_name}: ${order.status} → ${status}`);
     onUpdate?.();
   };
@@ -281,10 +264,11 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
     setSelectedDeliverer(delivererId || 'none');
     const deliverer = deliverers.find(d => d.id === delivererId);
     const updates = {
-      deliverer_id: delivererId,
+      deliverer_id: delivererId || null,
       deliverer_name: deliverer?.full_name || deliverer?.email || '',
-      delivery_status: 'Pendente',
-      status: 'Em Separação',
+      delivery_status: delivererId ? 'Pendente' : 'Pendente',
+      status: delivererId ? 'Com Entregador' : 'Em Separação',
+      ...(delivererId ? {} : { deliverer_name: '' }),
     };
     try {
       await base44.entities.Order.update(order.id, updates);
@@ -476,7 +460,7 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
               <FileText className="w-3.5 h-3.5 text-slate-400" />
               <span className="text-sm font-medium text-slate-700">{order.invoice_number || 'Sem NF'}</span>
             </div>
-            <Select defaultValue={order.status} onValueChange={changeStatus}>
+            <Select value={order.status} onValueChange={changeStatus}>
               <SelectTrigger className="w-48 h-9">
                 <SelectValue />
               </SelectTrigger>

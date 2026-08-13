@@ -182,7 +182,6 @@ export default function Cart() {
           variant_name: i.variant_name || null,
           weight_kg: effectiveWeight,
           weight_per_unit_kg: unitWeight,
-          stock_deducted: false,
         };
       });
 
@@ -201,8 +200,51 @@ export default function Cart() {
       const restaurantCnpj = restaurant?.cnpj || profileForm.cnpj || '';
       const contactInfo = restaurant?.contact_number || profileForm.contact_number || currentUser?.contact_number || '';
       const deliveryAddress = checkoutForm.delivery_address || buildFullAddress(restaurant || profileForm);
-
       const invoiceNumber = await generateInvoiceNumber();
+
+      // MUDANÇA IMPORTANTE: a baixa de estoque agora acontece ANTES de criar o
+      // pedido, e o resultado (stock_deducted) já vai gravado junto na ÚNICA
+      // escrita do pedido — não existe mais uma segunda chamada Order.update()
+      // depois. Isso corrige um bug real: se o Supabase estiver configurado
+      // (via RLS) para só permitir ao cliente CRIAR o próprio pedido, mas não
+      // ATUALIZAR depois de criado, aquela segunda chamada falhava em silêncio
+      // (o erro só ia pro console) e o campo stock_deducted ficava travado em
+      // false pra sempre — mesmo com o estoque corretamente baixado. Resultado:
+      // ao excluir o pedido depois, o sistema achava que nunca tinha baixado
+      // nada e não devolvia o estoque. Se isso já aconteceu com pedidos
+      // antigos, veja a nota no final deste arquivo sobre como corrigi-los.
+      const deductionResults = await Promise.allSettled(orderItems.map(async (item) => {
+        const qtyToDeduct = Number(item.weight_kg != null ? item.weight_kg : item.quantity || 0);
+        if (!item.product_id || qtyToDeduct <= 0) {
+          return null;
+        }
+
+        return base44.stock.deductFefo({
+          productId: item.product_id,
+          quantity: qtyToDeduct,
+        });
+      }));
+
+      const itemsWithDeductionStatus = orderItems.map((item, index) => ({
+        ...item,
+        stock_deducted: deductionResults[index]?.status === 'fulfilled',
+      }));
+
+      const failedDeductions = deductionResults
+        .map((result, index) => ({ result, item: orderItems[index] }))
+        .filter(({ result }) => result.status === 'rejected');
+
+      if (failedDeductions.length > 0) {
+        // Não bloqueia o pedido (ex: pode ser falta momentânea de estoque em
+        // 1 item de vários) mas o admin precisa saber — nunca aparece pro
+        // cliente, só no console e no audit log.
+        console.warn('Falha em uma ou mais baixas de estoque ao criar o pedido:', failedDeductions);
+        void logAction(
+          'Falha na Baixa de Estoque',
+          `Pedido de ${restaurantName}: falha ao baixar ${failedDeductions.map(f => f.item.product_name).join(', ')}`
+        );
+      }
+
       const createdOrder = await base44.entities.Order.create({
         created_by_id: currentUser.id,
         restaurant_name: restaurantName,
@@ -213,47 +255,28 @@ export default function Cart() {
         payment_method: checkoutForm.payment_method,
         contact_info: contactInfo,
         observations: checkoutForm.observations,
-        items: orderItems,
+        items: itemsWithDeductionStatus,
         total: grandTotal,
         shipping_fee: shippingFee,
+      }).catch(async (err) => {
+        // O pedido falhou DEPOIS que já baixamos estoque. Devolve o que foi
+        // deduzido com sucesso pra não perder estoque de um pedido que nunca
+        // existiu.
+        await Promise.allSettled(itemsWithDeductionStatus
+          .filter(item => item.stock_deducted)
+          .map(item => {
+            const qty = Number(item.weight_kg != null ? item.weight_kg : item.quantity || 0);
+            return base44.stock.adjustProductStock({ productId: item.product_id, delta: qty });
+          }));
+        throw err;
       });
+
+      void logAction('Pedido Criado', `${restaurant.restaurant_name} - ${formatBRL(grandTotal)} - Pedido #${createdOrder?.invoice_number || '-'}`);
 
       toast({
         title: 'Pedido enviado',
         description: 'Seu pedido foi registrado e está sendo processado.',
       });
-
-      void logAction('Pedido Criado', `${restaurant.restaurant_name} - ${formatBRL(grandTotal)} - Pedido #${createdOrder?.invoice_number || '-'}`);
-
-      void (async () => {
-        const deductionResults = await Promise.allSettled(orderItems.map(async (item) => {
-          const qtyToDeduct = Number(item.weight_kg != null ? item.weight_kg : item.quantity || 0);
-          if (!item.product_id || qtyToDeduct <= 0) {
-            return null;
-          }
-
-          return base44.stock.deductFefo({
-            productId: item.product_id,
-            quantity: qtyToDeduct,
-          });
-        }));
-
-        const updatedItems = orderItems.map((item, index) => ({
-          ...item,
-          stock_deducted: deductionResults[index]?.status === 'fulfilled',
-        }));
-
-        if (createdOrder?.id) {
-          await base44.entities.Order.update(createdOrder.id, { items: updatedItems }).catch((err) => {
-            console.warn('Não foi possível atualizar o status de baixa de estoque do pedido:', err);
-          });
-        }
-
-        const failedDeductions = deductionResults.filter(result => result.status === 'rejected');
-        if (failedDeductions.length > 0) {
-          console.warn('Falha em uma ou mais baixas de estoque:', failedDeductions);
-        }
-      })();
 
       clearCart();
       setSuccess(true);

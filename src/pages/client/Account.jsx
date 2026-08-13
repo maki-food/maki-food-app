@@ -150,8 +150,45 @@ export default function Account() {
 
   useEffect(() => {
     load();
-    const unsub = base44.entities.Order.subscribe(() => load());
-    return () => { if (unsub) unsub(); };
+
+    const intervalId = window.setInterval(() => {
+      load();
+    }, 5000);
+
+    const unsub = base44.entities.Order.subscribe((event) => {
+      if (event.type === 'refresh') {
+        load();
+        return;
+      }
+
+      setOrders(prev => {
+        if (event.type === 'create') {
+          if (!event.data || !event.data.id) return prev;
+          return prev.some(o => o.id === event.data.id) ? prev : [event.data, ...prev];
+        }
+
+        if (event.type === 'update') {
+          if (!event.data || !event.data.id) return prev;
+          const next = prev.some(o => o.id === event.data.id)
+            ? prev.map(o => o.id === event.data.id ? { ...o, ...event.data } : o)
+            : [event.data, ...prev];
+          return next;
+        }
+
+        if (event.type === 'delete') {
+          return prev.filter(o => o.id !== event.id);
+        }
+
+        return prev;
+      });
+
+      load();
+    });
+
+    return () => {
+      if (unsub) unsub();
+      window.clearInterval(intervalId);
+    };
   }, []);
 
   useEffect(() => {

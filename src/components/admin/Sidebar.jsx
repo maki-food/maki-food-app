@@ -31,22 +31,27 @@ export default function Sidebar({ open, onClose, userRole = 'admin' }) {
   useEffect(() => {
     const fetchCounts = async () => {
       try {
-        const orders = await base44.entities.Order.list('-created_date', 200);
-        setPendingCount(orders.filter(o => o.status !== 'Finalizado').length);
+        const orders = await base44.entities.Order.list('-created_date', 300);
+        const pendingOrders = orders.filter(o => o.status === 'Pedido Emitido');
+        setPendingCount(pendingOrders.length);
       } catch {
         setPendingCount(0);
       }
+
       try {
         const u = await base44.auth.me();
         if (u && u.role === 'deliverer') {
-          const all = await base44.entities.Order.list('-created_date', 200);
+          const all = await base44.entities.Order.list('-created_date', 300);
           setDeliveryCount(all.filter(o => o.deliverer_id === u.id && o.status !== 'Finalizado').length);
         }
       } catch {
         setDeliveryCount(0);
       }
     };
+
     fetchCounts();
+    const intervalId = window.setInterval(fetchCounts, 5000);
+
     const fetchExpirations = async () => {
       try {
         const prods = await base44.entities.Product.list();
@@ -66,7 +71,11 @@ export default function Sidebar({ open, onClose, userRole = 'admin' }) {
     fetchExpirations();
     const unsub = base44.entities.Order.subscribe(() => fetchCounts());
     const unsubProd = base44.entities.Product.subscribe(() => fetchExpirations());
-    return () => { if (unsub) unsub(); if (unsubProd) unsubProd(); };
+    return () => {
+      if (intervalId) window.clearInterval(intervalId);
+      if (unsub) unsub();
+      if (unsubProd) unsubProd();
+    };
   }, [userRole]);
 
   const badgeCount = (badge) => {

@@ -72,26 +72,39 @@ export default function AdminLayout() {
       }
     };
 
-    const notifyOrder = (title, description) => {
+    const notifyOrder = (title, description, options = {}) => {
+      const { playAudio = true } = options;
       setNotification({ title, message: description });
-      playSound();
+      if (playAudio) {
+        playSound();
+      }
       setTimeout(() => setNotification(null), 10000);
     };
 
     const checkLatestOrder = async () => {
       try {
-        const recent = await base44.entities.Order.list('-created_date', 5);
+        const recent = await base44.entities.Order.list('-created_date', 15);
         if (!recent?.length) return;
-        const latest = recent[0];
+
+        const activeNewest = [...recent].find((order) => order?.status !== 'Finalizado') || recent[0];
+        if (!activeNewest) return;
+
         if (!lastOrderIdRef.current) {
-          lastOrderIdRef.current = latest.id;
+          lastOrderIdRef.current = activeNewest.id;
           return;
         }
-        if (latest.id !== lastOrderIdRef.current) {
+
+        const trackedOrderStillExists = recent.some((order) => order?.id === lastOrderIdRef.current);
+        if (!trackedOrderStillExists) {
+          lastOrderIdRef.current = activeNewest.id;
+          return;
+        }
+
+        if (activeNewest.id !== lastOrderIdRef.current) {
           const previousId = lastOrderIdRef.current;
-          lastOrderIdRef.current = latest.id;
-          if (previousId && latest.id && (user.role === 'admin' || user.role === 'seller')) {
-            notifyOrder('Novo Pedido!', `${latest.restaurant_name} • ${formatBRL(latest.total)}`);
+          lastOrderIdRef.current = activeNewest.id;
+          if (previousId && activeNewest.id && (user.role === 'admin' || user.role === 'seller')) {
+            notifyOrder('Novo Pedido!', `${activeNewest.restaurant_name || 'Cliente'} • ${formatBRL(activeNewest.total || 0)}`);
           }
         }
       } catch {
@@ -99,11 +112,23 @@ export default function AdminLayout() {
       }
     };
 
+    const triggerCreateNotification = (o) => {
+      if (!o || !o.id || o.status === 'Finalizado') return;
+      const isDelivererAssigned = user.role === 'deliverer' && o.deliverer_id === user.id;
+      const isAdmin = user.role === 'admin' || user.role === 'seller';
+      if ((isAdmin || isDelivererAssigned) && (!lastOrderIdRef.current || lastOrderIdRef.current !== o.id)) {
+        const title = isDelivererAssigned ? 'Nova Entrega Atribuída!' : 'Novo Pedido!';
+        const description = `${o.restaurant_name || 'Cliente'} • ${formatBRL(o.total || 0)}`;
+        notifyOrder(title, description);
+      }
+      lastOrderIdRef.current = o.id;
+    };
+
     if (user.role !== 'deliverer') {
       checkLatestOrder();
       pollingRef.current = window.setInterval(() => {
         checkLatestOrder();
-      }, 5000);
+      }, 4000);
     }
 
     const unsub = base44.entities.Order.subscribe((event) => {
@@ -111,17 +136,22 @@ export default function AdminLayout() {
         if (user.role !== 'deliverer') checkLatestOrder();
         return;
       }
+
       if (event.type === 'create') {
-        const o = event.data;
-        const isDelivererAssigned = user.role === 'deliverer' && o.deliverer_id === user.id;
-        const isAdmin = user.role === 'admin' || user.role === 'seller';
-        if (isAdmin || isDelivererAssigned) {
-          const title = isDelivererAssigned ? 'Nova Entrega Atribuída!' : 'Novo Pedido!';
-          const description = `${o.restaurant_name} • ${formatBRL(o.total)}`;
-          notifyOrder(title, description);
-        }
-        lastOrderIdRef.current = o.id;
+        triggerCreateNotification(event.data);
       }
+
+      if (event.type === 'delete') {
+        const deletedOrder = event.data;
+        const deletedLabel = deletedOrder?.restaurant_name || 'Pedido';
+        if ((user.role === 'admin' || user.role === 'seller')) {
+          notifyOrder('Pedido Excluído', `${deletedLabel} foi removido do sistema.`, { playAudio: false });
+        }
+        if (lastOrderIdRef.current === deletedOrder?.id) {
+          lastOrderIdRef.current = null;
+        }
+      }
+
       if (event.type === 'update' && user.role !== 'deliverer') {
         const o = event.data;
         if (o.delivery_status === 'Aceito' && o.deliverer_name) {
@@ -132,6 +162,7 @@ export default function AdminLayout() {
           notifyOrder('Entrega Finalizada!', `${o.restaurant_name}`);
         }
       }
+
       if (event.type === 'update' && user.role === 'deliverer') {
         const wasAssignedToUser = event.previousData?.deliverer_id === user.id;
         const isAssignedToUser = event.data?.deliverer_id === user.id;
