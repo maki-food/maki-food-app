@@ -70,45 +70,51 @@ export default function Orders() {
   const handleDelete = async (order) => {
     if (!confirm(`Excluir pedido de ${order.restaurant_name}?`)) return;
 
+    const orderId = order.id;
     const orderItems = Array.isArray(order.items) ? order.items : [];
-    setOrders(prev => prev.filter(o => o.id !== order.id));
+    setOrders(prev => prev.filter(o => o.id !== orderId));
 
-    try {
-      const products = await base44.entities.Product.list().catch(() => []);
-      const productLookupByName = new Map(
-        products.map(product => [String(product.name || '').trim().toLowerCase(), product])
-      );
+    const runDelete = async () => {
+      try {
+        const products = await base44.entities.Product.list().catch(() => []);
+        const productLookupByName = new Map(
+          products.map(product => [String(product.name || '').trim().toLowerCase(), product])
+        );
 
-      await Promise.allSettled(orderItems.map(async (item) => {
-        const quantity = Number(item.weight_kg ?? item.quantity ?? 0);
-        if (!Number.isFinite(quantity) || quantity <= 0) return null;
+        await Promise.allSettled(orderItems.map(async (item) => {
+          const quantity = Number(item.weight_kg ?? item.quantity ?? 0);
+          if (!Number.isFinite(quantity) || quantity <= 0) return null;
 
-        let productId = item.product_id || null;
-        if (!productId) {
-          const match = productLookupByName.get(String(item.product_name || '').trim().toLowerCase());
-          productId = match?.id || null;
-        }
+          let productId = item.product_id || null;
+          if (!productId) {
+            const match = productLookupByName.get(String(item.product_name || '').trim().toLowerCase());
+            productId = match?.id || null;
+          }
 
-        if (!productId) return null;
+          if (!productId) return null;
 
-        const shouldRestore = item.stock_deducted !== false;
-        if (!shouldRestore) return null;
+          const shouldRestore = item.stock_deducted !== false;
+          if (!shouldRestore) return null;
 
-        try {
-          await base44.stock.adjustProductStock({ productId, delta: quantity });
-          await base44.stock.refreshProductCost(productId).catch(() => {});
-        } catch (stockError) {
-          console.warn('Falha ao restaurar estoque ao excluir pedido:', stockError);
-        }
-        return null;
-      }));
+          try {
+            await base44.stock.adjustProductStock({ productId, delta: quantity });
+            await base44.stock.refreshProductCost(productId).catch(() => {});
+          } catch (stockError) {
+            console.warn('Falha ao restaurar estoque ao excluir pedido:', stockError);
+          }
+          return null;
+        }));
 
-      await base44.entities.Order.delete(order.id);
-      await logAction('Pedido Excluído', order.restaurant_name);
-    } catch (error) {
-      console.error('Erro ao excluir pedido e restaurar estoque:', error);
-      alert(error?.message || 'Não foi possível excluir o pedido e restaurar o estoque.');
-    }
+        await base44.entities.Order.delete(orderId);
+        await logAction('Pedido Excluído', order.restaurant_name);
+      } catch (error) {
+        console.error('Erro ao excluir pedido e restaurar estoque:', error);
+        alert(error?.message || 'Não foi possível excluir o pedido e restaurar o estoque.');
+      }
+    };
+
+    await new Promise(resolve => window.requestAnimationFrame(() => resolve()));
+    await runDelete();
   };
 
   const hasAdvancedFilter = dateStart || dateEnd || clientSearch || cnpjSearch || nfSearch;
