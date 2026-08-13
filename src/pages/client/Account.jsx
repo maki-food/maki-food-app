@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { User, ClipboardList, UserCog, LogOut, HelpCircle, ShieldCheck, ChevronRight, MapPin, Loader2, Plus, Trash2, Package, Edit } from 'lucide-react';
-import { formatBRL, formatDate, getOrderItemQuantityLabel, getOrderItemSubtotal } from '@/lib/format';
+import { formatBRL, formatDate, getOrderDisplayItems, getOrderItemQuantityLabel, getOrderItemSubtotal } from '@/lib/format';
 import StatusBadge from '@/components/StatusBadge';
 
 const emptyForm = {
@@ -52,6 +52,7 @@ export default function Account() {
   const [showExtraAddress, setShowExtraAddress] = useState(false);
   const [extraForm, setExtraForm] = useState(emptyAddress);
   const [loadingProfile, setLoadingProfile] = useState(true);
+  const [ordersTab, setOrdersTab] = useState('active');
   const [orderCount, setOrderCount] = useState(0);
   const [saving, setSaving] = useState(false);
   const [lookingUpCep, setLookingUpCep] = useState(false);
@@ -125,8 +126,10 @@ export default function Account() {
     setOrderCount(Array.isArray(orders) ? orders.length : 0);
   };
 
-  const load = async () => {
-    setLoadingProfile(true);
+  const load = async (options = {}) => {
+    const { silent = false } = options;
+    if (!silent) setLoadingProfile(true);
+
     const currentUser = await base44.auth.me().catch(() => null);
     setUser(currentUser);
     if (!currentUser) {
@@ -137,7 +140,7 @@ export default function Account() {
       setExtraForm(emptyAddress);
       setShowExtraAddress(false);
       setEditingAddress(null);
-      setLoadingProfile(false);
+      if (!silent) setLoadingProfile(false);
       return;
     }
 
@@ -145,19 +148,19 @@ export default function Account() {
     setAccountName(Array.isArray(rests) && rests.length > 0 ? rests[0]?.account_name || null : null);
     await loadProfileData(currentUser);
     setEditingAddress(null);
-    setLoadingProfile(false);
+    if (!silent) setLoadingProfile(false);
   };
 
   useEffect(() => {
     load();
 
     const intervalId = window.setInterval(() => {
-      load();
-    }, 5000);
+      load({ silent: true });
+    }, 1000);
 
     const unsub = base44.entities.Order.subscribe((event) => {
       if (event.type === 'refresh') {
-        load();
+        load({ silent: true });
         return;
       }
 
@@ -182,7 +185,7 @@ export default function Account() {
         return prev;
       });
 
-      load();
+      load({ silent: true });
     });
 
     return () => {
@@ -615,20 +618,34 @@ export default function Account() {
 
     const activeOrders = orders.filter(o => o.status !== 'Finalizado');
     const finalizedOrders = orders.filter(o => o.status === 'Finalizado');
+    const sortByDeliverySequence = (a, b) => {
+      if (a.delivery_sequence == null && b.delivery_sequence == null) {
+        return new Date(b.created_date) - new Date(a.created_date);
+      }
+      if (a.delivery_sequence == null) return 1;
+      if (b.delivery_sequence == null) return -1;
+      return Number(a.delivery_sequence) - Number(b.delivery_sequence);
+    };
+    const visibleOrders = (ordersTab === 'active' ? activeOrders : finalizedOrders).sort(ordersTab === 'active' ? sortByDeliverySequence : (a, b) => new Date(b.created_date) - new Date(a.created_date));
 
     const renderOrderCard = (order) => {
       const isExpanded = expandedOrderId === order.id;
       return (
-        <div key={order.id} className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
+        <div key={order.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden mb-3">
           <button
             type="button"
             onClick={() => setExpandedOrderId(isExpanded ? null : order.id)}
             className="w-full p-4 text-left hover:bg-slate-50 transition"
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="font-semibold text-slate-900 truncate">{order.invoice_number || `Pedido #${order.id?.slice(-6).toUpperCase()}`}</p>
-                <p className="text-sm text-slate-500">{formatDate(order.created_date)} • {(order.items || []).length} itens</p>
+              <div className="min-w-0 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                  <Package className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900 truncate">{order.invoice_number || `Pedido #${order.id?.slice(-6).toUpperCase()}`}</p>
+                  <p className="text-sm text-slate-500">{formatDate(order.created_date)} • {(order.items || []).length} itens</p>
+                </div>
               </div>
               <div className="flex items-center gap-3 flex-wrap">
                 <StatusBadge status={order.status} />
@@ -638,7 +655,7 @@ export default function Account() {
           </button>
           {isExpanded ? (
             <div className="border-t border-slate-200 bg-slate-50 p-4 space-y-4 text-sm text-slate-600">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <p className="text-slate-400 text-xs uppercase tracking-wide">Endereço</p>
                   <p className="text-slate-700">{order.delivery_address || 'Não informado'}</p>
@@ -647,62 +664,41 @@ export default function Account() {
                   <p className="text-slate-400 text-xs uppercase tracking-wide">Pagamento</p>
                   <p className="text-slate-700">{order.payment_method || 'Não informado'}</p>
                 </div>
-                <div>
-                  <p className="text-slate-400 text-xs uppercase tracking-wide">Status</p>
-                  <p className="text-slate-700">{order.status || 'Pendente'}</p>
-                </div>
               </div>
 
               {(order.items || []).length > 0 ? (
-                <>
-                  <div className="rounded-3xl border border-slate-200 overflow-hidden bg-white">
-                    <div className="bg-slate-100 px-4 py-3 text-xs uppercase tracking-wide text-slate-500">Produtos</div>
-                    <div className="divide-y divide-slate-100">
-                      {getOrderDisplayItems(order).map((item, index) => {
-                        const product = item.product_id ? productMapById[item.product_id] : null;
-                        const fallbackProduct = !product && item.product_name ? productMapByName[String(item.product_name).toLowerCase()] : null;
-                        const resolvedProduct = product || fallbackProduct;
-                        const imageUrl = item.image_url || resolvedProduct?.image_url || null;
-                        const displayName = item.product_name || resolvedProduct?.name || 'Produto';
-                        const key = item.product_id ? `${item.product_id}-${item.variant_id || 'default'}` : index;
-                        return (
-                          <div key={key} className="flex items-center gap-3 px-4 py-3">
-                            <div className="w-16 h-16 rounded-2xl bg-slate-100 overflow-hidden flex items-center justify-center">
-                              {imageUrl ? (
-                                <img src={imageUrl} alt={displayName} className="h-full w-full object-cover" />
-                              ) : (
-                                <Package className="w-6 h-6 text-slate-400" />
-                              )}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="font-medium text-slate-900 truncate">{displayName}{item.variant_name ? ` - ${item.variant_name}` : ''}</p>
-                              <p className="text-xs text-slate-500">{getOrderItemQuantityLabel(item)} x {formatBRL(item.price || 0)}</p>
-                            </div>
-                            <p className="ml-auto text-sm font-semibold text-slate-900">{formatBRL(getOrderItemSubtotal(item))}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
-                    <span>Frete</span>
-                    <span>{(order.shipping_fee || 0) > 0 ? formatBRL(order.shipping_fee) : 'Grátis'}</span>
-                  </div>
-                  <div className="flex justify-between items-center pt-2 border-t border-slate-100">
-                    <span className="text-sm text-slate-500">Total</span>
-                    <span className="text-lg font-bold text-emerald-600">{formatBRL(order.total)}</span>
-                  </div>
-                </>
+                <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-400">
+                      <tr>
+                        <th className="px-3 py-2">Produto</th>
+                        <th className="px-3 py-2 text-center">Qtd</th>
+                        <th className="px-3 py-2 text-right">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {getOrderDisplayItems(order).map((item, index) => (
+                        <tr key={`${item.product_id || index}-${item.variant_id || 'default'}`} className="border-t border-slate-100">
+                          <td className="px-3 py-2">{item.product_name}{item.variant_name ? ` - ${item.variant_name}` : ''}</td>
+                          <td className="px-3 py-2 text-center">{getOrderItemQuantityLabel(item)}</td>
+                          <td className="px-3 py-2 text-right">{formatBRL(getOrderItemSubtotal(item))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
-                <div className="rounded-3xl border border-slate-200 bg-white p-4 text-slate-500">Produtos não disponíveis</div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-500">Produtos não disponíveis</div>
               )}
 
-              {order.observations && (
-                <div>
-                  <p className="text-slate-400 text-xs uppercase tracking-wide">Observações</p>
-                  <p className="text-slate-700">{order.observations}</p>
-                </div>
-              )}
+              <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
+                <span>Frete</span>
+                <span>{(order.shipping_fee || 0) > 0 ? formatBRL(order.shipping_fee) : 'Grátis'}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+                <span className="text-sm text-slate-500">Total</span>
+                <span className="text-lg font-bold text-emerald-600">{formatBRL(order.total)}</span>
+              </div>
             </div>
           ) : null}
         </div>
@@ -711,36 +707,42 @@ export default function Account() {
 
     return (
       <div className="space-y-6 pt-6">
-        {orders.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-6 py-16">
-            <Package className="h-20 w-20 text-slate-400" />
-            <div className="space-y-3 text-center max-w-md">
-              <p className="text-2xl font-semibold text-slate-900">Você ainda não tem pedidos.</p>
-              <p className="text-sm text-slate-600">Faça um pedido e ele aparecerá aqui.</p>
-            </div>
-            <Button onClick={() => navigate('/loja/produtos')} className="bg-emerald-600 hover:bg-emerald-700">
-              Conferir produtos
-            </Button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setOrdersTab('active');
+                setExpandedOrderId(null);
+              }}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition ${ordersTab === 'active' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >
+              Pedidos em andamento
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOrdersTab('finalized');
+                setExpandedOrderId(null);
+              }}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition ${ordersTab === 'finalized' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >
+              Pedidos concluídos
+            </button>
+          </div>
+          <p className="text-sm text-slate-500">
+            {ordersTab === 'active'
+              ? `${activeOrders.length} pedido(s) em andamento`
+              : `${finalizedOrders.length} pedido(s) concluído(s)`}
+          </p>
+        </div>
+
+        {visibleOrders.length === 0 ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center text-slate-500">
+            {ordersTab === 'active' ? 'Nenhum pedido em andamento no momento.' : 'Ainda não há pedidos concluídos.'}
           </div>
         ) : (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900 mb-3">Pedidos em andamento</h2>
-              {activeOrders.length > 0 ? activeOrders.map(renderOrderCard) : (
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 text-slate-500">
-                  Não há pedidos em andamento no momento.
-                </div>
-              )}
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900 mb-3">Pedidos concluídos</h2>
-              {finalizedOrders.length > 0 ? finalizedOrders.map(renderOrderCard) : (
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 text-slate-500">
-                  Ainda não há pedidos concluídos.
-                </div>
-              )}
-            </div>
-          </div>
+          visibleOrders.map(renderOrderCard)
         )}
       </div>
     );
@@ -800,8 +802,8 @@ export default function Account() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
-      <aside className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] items-start">
+      <aside className="w-[260px] rounded-3xl border border-slate-200 bg-white p-5 shadow-sm self-start">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center">
             <User className="w-6 h-6 text-emerald-600" />

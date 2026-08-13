@@ -14,7 +14,10 @@ export default function MyOrders() {
   const [expanded, setExpanded] = useState(null);
   const [selectedTab, setSelectedTab] = useState('active');
 
-  const load = async () => {
+  const load = async (options = {}) => {
+    const { silent = false } = options;
+    if (!silent) setLoading(true);
+
     try {
       const u = await base44.auth.me();
       setUser(u);
@@ -30,19 +33,19 @@ export default function MyOrders() {
     } catch {
       setUser(null);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   useEffect(() => {
     load();
 
     const intervalId = window.setInterval(() => {
-      load();
-    }, 5000);
+      load({ silent: true });
+    }, 1000);
 
     const unsub = base44.entities.Order.subscribe((event) => {
       if (event.type === 'refresh') {
-        load();
+        load({ silent: true });
         return;
       }
 
@@ -67,7 +70,7 @@ export default function MyOrders() {
         return prev;
       });
 
-      load();
+      load({ silent: true });
     });
 
     return () => {
