@@ -154,43 +154,19 @@ export default function Account() {
   useEffect(() => {
     load();
 
-    const intervalId = window.setInterval(() => {
-      load({ silent: true });
-    }, 1000);
-
+    // Mesma correção do MyOrders.jsx: removido o setInterval de 1s (rodava
+    // junto com o realtime, fazendo a mesma busca 2x) e o load() redundante
+    // depois do setOrders (o realtime já atualiza o estado com precisão,
+    // não precisa buscar tudo de novo por cima).
     const unsub = base44.entities.Order.subscribe((event) => {
-      if (event.type === 'refresh') {
+      if (event.type === 'refresh' || event.type === 'create' || event.type === 'update' || event.type === 'delete') {
         load({ silent: true });
         return;
       }
-
-      setOrders(prev => {
-        if (event.type === 'create') {
-          if (!event.data || !event.data.id) return prev;
-          return prev.some(o => o.id === event.data.id) ? prev : [event.data, ...prev];
-        }
-
-        if (event.type === 'update') {
-          if (!event.data || !event.data.id) return prev;
-          const next = prev.some(o => o.id === event.data.id)
-            ? prev.map(o => o.id === event.data.id ? { ...o, ...event.data } : o)
-            : [event.data, ...prev];
-          return next;
-        }
-
-        if (event.type === 'delete') {
-          return prev.filter(o => o.id !== event.id);
-        }
-
-        return prev;
-      });
-
-      load({ silent: true });
     });
 
     return () => {
       if (unsub) unsub();
-      window.clearInterval(intervalId);
     };
   }, []);
 

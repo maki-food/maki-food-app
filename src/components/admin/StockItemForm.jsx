@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, ImageIcon } from 'lucide-react';
+import { Loader2, ImageIcon, Printer } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 import { logAction } from '@/lib/audit';
 import { optimizeImage } from '@/lib/imageUpload';
 import { formatDateShort, formatBRL } from '@/lib/format';
+import PrintBatchModal from '@/components/admin/PrintBatchModal';
 
 const units = ['kg', 'g', 'un', 'litro', 'ml'];
 
@@ -22,6 +23,25 @@ const emptyForm = {
   category: '',
   purchase_cost: '0',
   stock_quantity: '0',
+};
+
+// Formata data para YYYYMMDD
+const formatDateForBatch = (dateStr) => {
+  if (!dateStr) return '00000000';
+  try {
+    const date = new Date(dateStr);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}${month}${day}`;
+  } catch {
+    return '00000000';
+  }
+};
+
+// Calcula número do lote baseado na posição (FEFO — lote mais antigo = 01)
+const calculateBatchNumber = (batchIndex) => {
+  return String(batchIndex + 1).padStart(2, '0');
 };
 
 /**
@@ -37,6 +57,8 @@ export default function StockItemForm({ item, prefill, open, onClose, onSave, on
   const [categories, setCategories] = useState([]);
   const [batches, setBatches] = useState([]);
   const [batchCosts, setBatchCosts] = useState({ current: null, next: null });
+  const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [selectedBatchForPrint, setSelectedBatchForPrint] = useState(null);
 
   useEffect(() => {
     if (!open) return;
@@ -202,7 +224,7 @@ export default function StockItemForm({ item, prefill, open, onClose, onSave, on
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-6xl w-full">
+      <DialogContent className="max-w-6xl w-full max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{item ? 'Editar Item de Estoque' : 'Novo Item de Estoque'}</DialogTitle>
         </DialogHeader>
@@ -319,25 +341,57 @@ export default function StockItemForm({ item, prefill, open, onClose, onSave, on
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="mb-4">
                   <p className="text-sm font-semibold text-slate-900">Lotes de estoque</p>
-                  <p className="text-xs text-slate-500">Organizados por validade e quantidade.</p>
+                  <p className="text-xs text-slate-500">Organizados por validade (mais antigos primeiro) e quantidade.</p>
                 </div>
                 {batches.length === 0 ? (
                   <p className="text-sm text-slate-500">Nenhum lote encontrado para este item.</p>
                 ) : (
                   <div className="space-y-3">
-                    {batches.map(batch => (
-                      <div key={batch.id} className="rounded-3xl border border-slate-200 p-4">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">{batch.quantity || 0} {form.unit}</p>
-                          <p className="text-xs text-slate-500">Validade <strong className="font-semibold text-slate-900">{batch.expiration_date ? formatDateShort(batch.expiration_date) : 'sem data'}</strong></p>
+                    {batches.map((batch, index) => {
+                      const batchNumber = calculateBatchNumber(index);
+                      const batchDate = formatDateForBatch(batch.expiration_date);
+                      return (
+                        <div key={batch.id} className="rounded-3xl border border-slate-200 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1">
+                              <p className="text-sm font-semibold text-slate-900">{batch.quantity || 0} {form.unit}</p>
+                              <p className="text-xs text-slate-500">Validade <strong className="font-semibold text-slate-900">{batch.expiration_date ? formatDateShort(batch.expiration_date) : 'sem data'}</strong></p>
+                              <p className="text-xs text-emerald-600 font-mono font-semibold mt-2">Lote: {batchNumber}-{batchDate}</p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedBatchForPrint({ batchNumber, batchDate, productName: form.name });
+                                setPrintModalOpen(true);
+                              }}
+                              className="border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 flex-shrink-0"
+                            >
+                              <Printer className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
             )}
           </aside>
+
+          {selectedBatchForPrint && (
+            <PrintBatchModal
+              open={printModalOpen}
+              onClose={() => {
+                setPrintModalOpen(false);
+                setSelectedBatchForPrint(null);
+              }}
+              productName={selectedBatchForPrint.productName}
+              batchNumber={selectedBatchForPrint.batchNumber}
+              batchDate={selectedBatchForPrint.batchDate}
+            />
+          )}
 
           <DialogFooter className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             {item ? (

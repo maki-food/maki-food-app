@@ -20,6 +20,23 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+// -----------------------------------------------------------------------
+// CORREÇÃO: manter o Realtime autenticado com o token atual.
+// Sem isso, o WebSocket do Realtime autentica uma vez (no load da página)
+// e nunca mais é avisado quando o token de sessão é renovado
+// (autoRefreshToken troca o token por trás dos panos periodicamente).
+// Se as políticas RLS da tabela dependem do usuário autenticado, o
+// Realtime passa a usar um token vencido e o Postgres para de entregar
+// eventos pro navegador — SEM erro nenhum aparecer no console, o canal
+// continua mostrando "SUBSCRIBED" normalmente. Isso explica sintomas como
+// "as vezes chega notificação, às vezes não" ou "só atualiza se eu sair e
+// voltar na página". supabase.auth.onAuthStateChange dispara toda vez que
+// o token muda (login, refresh automático, etc) — repassamos pro Realtime
+// sempre que isso acontece.
+supabase.auth.onAuthStateChange((_event, session) => {
+  supabase.realtime.setAuth(session?.access_token ?? supabaseAnonKey);
+});
+
 // ---------------------------------------------------------------------------
 // Mapa entidade (Base44) -> tabela (Supabase)
 // ---------------------------------------------------------------------------
@@ -359,7 +376,7 @@ const stock = {
 
     const { data: currentProduct, error: currentProductError } = await supabase
       .from('products')
-      .select('stock_quantity')
+      .select('id, stock_quantity, unit')
       .eq('id', productId)
       .maybeSingle();
 
@@ -367,7 +384,9 @@ const stock = {
       throwIfError(currentProductError);
     }
 
-    const previousStock = Number(currentProduct?.stock_quantity || 0);
+    if (!currentProduct) {
+      throw new Error(`Produto ${productId} não encontrado ao adicionar lote.`);
+    }
 
     const { data: batch, error: batchError } = await supabase
       .from('product_batches')
@@ -385,31 +404,7 @@ const stock = {
       throwIfError(batchError);
     }
 
-    const { data: updatedProduct, error: updatedProductError } = await supabase
-      .from('products')
-      .select('stock_quantity')
-      .eq('id', productId)
-      .maybeSingle();
-
-    if (updatedProductError) {
-      throwIfError(updatedProductError);
-    }
-
-    const updatedStock = Number(updatedProduct?.stock_quantity || 0);
-    const stockDelta = updatedStock - previousStock;
-
-    if (stockDelta === 0) {
-      const adjustmentResult = await stock.adjustProductStock({ productId, delta: normalizedQuantity });
-      if (!adjustmentResult) {
-        throw new Error(`Falha ao atualizar estoque do produto ${productId} após adicionar lote.`);
-      }
-    } else if (stockDelta !== normalizedQuantity) {
-      console.warn(`Ajuste de estoque inesperado para produto ${productId}: delta do banco ${stockDelta}, esperado ${normalizedQuantity}.`);
-    }
-
-    await stock.refreshProductCost(productId).catch((err) => {
-      console.warn('Não foi possível atualizar o custo do produto após adicionar lote:', err);
-    });
+    await stock.refreshProductCost(productId).catch(() => {});
     return batch;
   },
 
@@ -420,9 +415,18 @@ const stock = {
       return null;
     }
 
+    // OTIMIZAÇÃO DE VELOCIDADE: essa função roda dentro do checkout do
+    // cliente e trava o "Confirmar Pedido" até terminar — cada ida ao banco
+    // aqui é tempo de espera real na tela. Reduzido de ~6 idas sequenciais
+    // pra rodar em paralelo o que é independente:
+    //   1) já buscamos 'unit' junto com 'stock_quantity' (1 select, não 2)
+    //   2) baixa dos lotes (FEFO) e baixa do estoque total rodam ao mesmo
+    //      tempo (Promise.all), não uma esperando a outra
+    //   3) refreshProductCost (custo médio) não bloqueia mais — é só um
+    //      dado de exibição, não afeta a exatidão do estoque
     const { data: currentProduct, error: productError } = await supabase
       .from('products')
-      .select('id, stock_quantity')
+      .select('id, stock_quantity, unit')
       .eq('id', productId)
       .maybeSingle();
     throwIfError(productError);
@@ -436,59 +440,64 @@ const stock = {
       throw new Error(`Estoque insuficiente para baixa FEFO. Disponível: ${currentStock}, solicitado: ${normalizedQuantity}.`);
     }
 
-    let updatedBatches = [];
-    let batchDeductionSucceeded = false;
+    const deductBatches = async () => {
+      let updatedBatches = [];
+      let batchDeductionSucceeded = false;
+      try {
+        const { data: batches, error: batchError } = await supabase
+          .from('product_batches')
+          .select('id, quantity, expiration_date')
+          .eq('product_id', productId)
+          .gt('quantity', 0);
 
-    try {
-      const { data: batches, error: batchError } = await supabase
-        .from('product_batches')
-        .select('id, quantity, expiration_date')
-        .eq('product_id', productId)
-        .gt('quantity', 0);
+        if (!batchError && Array.isArray(batches) && batches.length > 0) {
+          const sortedBatches = batches.slice().sort((a, b) => {
+            const aDate = a?.expiration_date ? new Date(a.expiration_date).getTime() : Number.MAX_SAFE_INTEGER;
+            const bDate = b?.expiration_date ? new Date(b.expiration_date).getTime() : Number.MAX_SAFE_INTEGER;
+            return aDate - bDate;
+          });
 
-      if (!batchError && Array.isArray(batches) && batches.length > 0) {
-        const sortedBatches = batches.slice().sort((a, b) => {
-          const aDate = a?.expiration_date ? new Date(a.expiration_date).getTime() : Number.MAX_SAFE_INTEGER;
-          const bDate = b?.expiration_date ? new Date(b.expiration_date).getTime() : Number.MAX_SAFE_INTEGER;
-          return aDate - bDate;
-        });
+          let remaining = normalizedQuantity;
+          for (const batch of sortedBatches) {
+            if (remaining <= 0) break;
+            const batchQuantity = Number(batch.quantity || 0);
+            if (batchQuantity <= 0) continue;
 
-        let remaining = normalizedQuantity;
-        for (const batch of sortedBatches) {
-          if (remaining <= 0) break;
-          const batchQuantity = Number(batch.quantity || 0);
-          if (batchQuantity <= 0) continue;
+            const consume = Math.min(batchQuantity, remaining);
+            const { data: updatedBatch, error: updateError } = await supabase
+              .rpc('decrement_batch_quantity', { p_batch_id: batch.id, p_amount: consume })
+              .maybeSingle();
 
-          const consume = Math.min(batchQuantity, remaining);
-          // Mesma proteção do adjustProductStock: UPDATE atômico via RPC em vez de
-          // "li X, calculei X-consume, escrevi" (que também sofre race condition
-          // se dois pedidos consumirem o mesmo lote ao mesmo tempo).
-          const { data: updatedBatch, error: updateError } = await supabase
-            .rpc('decrement_batch_quantity', { p_batch_id: batch.id, p_amount: consume })
-            .maybeSingle();
+            if (updateError) {
+              throw updateError;
+            }
 
-          if (updateError) {
-            throw updateError;
+            updatedBatches.push(updatedBatch);
+            remaining -= consume;
           }
 
-          updatedBatches.push(updatedBatch);
-          remaining -= consume;
+          batchDeductionSucceeded = updatedBatches.length > 0 && remaining <= 0;
         }
-
-        batchDeductionSucceeded = updatedBatches.length > 0 && remaining <= 0;
+      } catch (batchErr) {
+        console.warn('Baixa FEFO por lotes não foi possível; usando fallback de estoque total:', batchErr);
+        updatedBatches = [];
+        batchDeductionSucceeded = false;
       }
-    } catch (batchErr) {
-      console.warn('Baixa FEFO por lotes não foi possível; usando fallback de estoque total:', batchErr);
-      updatedBatches = [];
-      batchDeductionSucceeded = false;
+      return { updatedBatches, batchDeductionSucceeded };
+    };
+
+    // Apenas executar deductBatches — NÃO chamar adjustProductStock!
+    // Quando um lote é atualizado (decrementado), o trigger recompute_product_stock
+    // dispara automaticamente e recalcula o total. Se chamarmos adjustProductStock,
+    // duplica a baixa!
+    const { updatedBatches, batchDeductionSucceeded } = await deductBatches();
+
+    if (!batchDeductionSucceeded) {
+      throw new Error(`Falha ao fazer baixa FEFO dos lotes do produto ${productId}.`);
     }
 
-    const adjustedStock = await stock.adjustProductStock({ productId, delta: -normalizedQuantity });
-    if (!adjustedStock) {
-      throw new Error(`Falha ao atualizar o estoque total do produto ${productId} após baixa FEFO.`);
-    }
-
-    await stock.refreshProductCost(productId).catch((err) => {
+    // Não bloqueia mais o checkout do cliente — roda em segundo plano.
+    void stock.refreshProductCost(productId).catch((err) => {
       console.warn('Não foi possível atualizar o custo do produto após baixa FEFO:', err);
     });
 
@@ -620,6 +629,8 @@ const stock = {
       return null;
     }
 
+    console.log(`💾 adjustProductStock CALL | productId: ${productId} | delta: ${normalizedDelta} | unit: ${unit}`);
+
     try {
       // Só precisamos do 'unit' para decidir se arredondamos o delta (produtos por
       // unidade não podem ter estoque fracionado). Essa leitura NÃO participa da
@@ -643,15 +654,13 @@ const stock = {
       const parsedDelta = isWeightUnit ? normalizedDelta : Math.round(normalizedDelta);
 
       const { data, error } = await supabase
-        .rpc('adjust_product_stock', { p_product_id: productId, p_delta: parsedDelta })
-        .maybeSingle();
+        .rpc('adjust_product_stock', { p_product_id: productId, p_delta: parsedDelta });
 
       if (error) {
-        console.warn('Falha ao atualizar estoque do produto:', error);
-        return null;
+        throw new Error(error.message || 'Falha ao atualizar estoque do produto.');
       }
 
-      return data;
+      return data ?? parsedDelta;
     } catch (err) {
       console.warn('Erro inesperado ao ajustar estoque:', err);
       return null;

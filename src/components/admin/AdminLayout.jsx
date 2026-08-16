@@ -17,7 +17,8 @@ export default function AdminLayout() {
   const [notification, setNotification] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const lastOrderIdRef = useRef(null);
-  const pollingRef = useRef(null);
+  const notifiedOrderIdsRef = useRef([]);
+  const notificationTimeoutRef = useRef(null);
 
   useEffect(() => {
     base44.auth.me()
@@ -31,7 +32,10 @@ export default function AdminLayout() {
 
     const playSound = () => {
       try {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const AudioCtor = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtor) return;
+
+        const audioContext = new AudioCtor();
         const createBell = (startTime, frequency) => {
           const osc = audioContext.createOscillator();
           const fmOsc = audioContext.createOscillator();
@@ -67,6 +71,9 @@ export default function AdminLayout() {
         const now = audioContext.currentTime;
         createBell(now, 720);
         createBell(now + 0.45, 880);
+        if (typeof audioContext.resume === 'function') {
+          void audioContext.resume();
+        }
       } catch {
         // ignore audio failures on restricted browsers
       }
@@ -74,69 +81,34 @@ export default function AdminLayout() {
 
     const notifyOrder = (title, description, options = {}) => {
       const { playAudio = true } = options;
-      setNotification({ title, message: description });
       if (playAudio) {
         playSound();
       }
-      setTimeout(() => setNotification(null), 10000);
-    };
-
-    const checkLatestOrder = async () => {
-      try {
-        const recent = await base44.entities.Order.list('-created_date', 15);
-        if (!recent?.length) return;
-
-        const activeNewest = [...recent].find((order) => order?.status !== 'Finalizado') || recent[0];
-        if (!activeNewest) return;
-
-        if (!lastOrderIdRef.current) {
-          lastOrderIdRef.current = activeNewest.id;
-          return;
-        }
-
-        const trackedOrderStillExists = recent.some((order) => order?.id === lastOrderIdRef.current);
-        if (!trackedOrderStillExists) {
-          lastOrderIdRef.current = activeNewest.id;
-          return;
-        }
-
-        if (activeNewest.id !== lastOrderIdRef.current) {
-          const previousId = lastOrderIdRef.current;
-          lastOrderIdRef.current = activeNewest.id;
-          if (previousId && activeNewest.id && (user.role === 'admin' || user.role === 'seller')) {
-            notifyOrder('Novo Pedido!', `${activeNewest.restaurant_name || 'Cliente'} • ${formatBRL(activeNewest.total || 0)}`);
-          }
-        }
-      } catch {
-        // ignore polling failures
+      setNotification({ title, message: description });
+      if (notificationTimeoutRef.current) {
+        window.clearTimeout(notificationTimeoutRef.current);
       }
+      notificationTimeoutRef.current = window.setTimeout(() => setNotification(null), 10000);
     };
 
     const triggerCreateNotification = (o) => {
       if (!o || !o.id || o.status === 'Finalizado') return;
       const isDelivererAssigned = user.role === 'deliverer' && o.deliverer_id === user.id;
       const isAdmin = user.role === 'admin' || user.role === 'seller';
-      if ((isAdmin || isDelivererAssigned) && (!lastOrderIdRef.current || lastOrderIdRef.current !== o.id)) {
+      const now = Date.now();
+      notifiedOrderIdsRef.current = notifiedOrderIdsRef.current.filter(([, ts]) => now - ts < 60000);
+      const alreadyNotified = notifiedOrderIdsRef.current.some(([id]) => id === o.id);
+
+      if ((isAdmin || isDelivererAssigned) && !alreadyNotified) {
         const title = isDelivererAssigned ? 'Nova Entrega Atribuída!' : 'Novo Pedido!';
         const description = `${o.restaurant_name || 'Cliente'} • ${formatBRL(o.total || 0)}`;
-        notifyOrder(title, description);
+        notifyOrder(title, description, { playAudio: true });
+        notifiedOrderIdsRef.current.push([o.id, now]);
       }
       lastOrderIdRef.current = o.id;
     };
 
-    if (user.role !== 'deliverer') {
-      checkLatestOrder();
-      pollingRef.current = window.setInterval(() => {
-        checkLatestOrder();
-      }, 4000);
-    }
-
     const unsub = base44.entities.Order.subscribe((event) => {
-      if (event.type === 'refresh') {
-        if (user.role !== 'deliverer') checkLatestOrder();
-        return;
-      }
-
       if (event.type === 'create') {
         triggerCreateNotification(event.data);
       }
@@ -173,9 +145,8 @@ export default function AdminLayout() {
     });
 
     return () => {
-      if (pollingRef.current) {
-        window.clearInterval(pollingRef.current);
-        pollingRef.current = null;
+      if (notificationTimeoutRef.current) {
+        window.clearTimeout(notificationTimeoutRef.current);
       }
       if (unsub) unsub();
     };

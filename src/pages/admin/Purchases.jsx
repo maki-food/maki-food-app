@@ -43,14 +43,15 @@ export default function Purchases() {
     try {
       const batches = await base44.entities.ProductBatch.filter({ purchase_id: purchase.id });
       const affectedProductIds = new Set(batches.map(b => b.product_id));
+      
+      // Quando um lote é deletado, o trigger SQL (recompute_product_stock) dispara
+      // automaticamente e recalcula o estoque. NÃO precisa chamar adjustProductStock!
       for (const batch of batches) {
-        const quantityToRemove = Number(batch.quantity || 0);
-        if (quantityToRemove > 0) {
-          await base44.stock.adjustProductStock({ productId: batch.product_id, delta: -quantityToRemove }).catch(() => {});
-        }
         await base44.entities.ProductBatch.delete(batch.id);
       }
+      
       await base44.entities.Purchase.delete(purchase.id);
+      
       for (const productId of affectedProductIds) {
         await base44.stock.refreshProductCost(productId).catch(() => {});
       }

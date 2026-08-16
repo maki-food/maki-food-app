@@ -1,11 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/supabaseClient';
+import { base44, supabase } from '@/api/supabaseClient';
 import OrderAccordion from '@/components/OrderAccordion';
 import { logAction } from '@/lib/audit';
 import { Input } from '@/components/ui/input';
 import DateInput from '@/components/ui/date-input';
 import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
+import { toast } from '@/components/ui/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { ClipboardList, Search, Filter, X } from 'lucide-react';
 import { getPeriodRange } from '@/lib/dateFilters';
 
@@ -37,6 +47,9 @@ export default function Orders() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [dateFilter, setDateFilter] = useState('today');
 
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
   const load = async () => {
     try { setOrders(await base44.entities.Order.list('-created_date', 200)); } catch {}
     setLoading(false);
@@ -67,54 +80,88 @@ export default function Orders() {
     }
   }, [filter]);
 
-  const handleDelete = async (order) => {
-    if (!confirm(`Excluir pedido de ${order.restaurant_name}?`)) return;
+  // ANTES: usava window.confirm(), que é uma dialog NATIVA e SÍNCRONA — ela
+  // congela a thread principal do JS até o usuário responder. É exatamente
+  // isso que o "INP alto (1088ms)" estava medindo: o navegador conta esse
+  // tempo todo como o clique "travando" a UI. window.alert() no catch tinha
+  // o mesmo problema. Trocado por um modal React (AlertDialog) — não bloqueia
+  // a thread, e os erros agora vão para um toast em vez de alert().
+  const handleDelete = (order) => {
+    setPendingDelete(order);
+  };
+
+  // EXCLUSÃO ATÔMICA: restaurar estoque + apagar o pedido agora é 1 única
+  // chamada RPC, dentro de 1 transação no Postgres. Antes eram passos
+  // separados no navegador — se a restauração falhasse, o código só
+  // logava um aviso e EXCLUÍA o pedido mesmo assim (Promise.allSettled não
+  // propaga falha), perdendo o estoque sem avisar ninguém. Agora, se a
+  // restauração falhar por qualquer motivo, nada é excluído e você vê o
+  // erro de verdade. Ver delete_order_and_restore_stock em
+  // supabase_migration_atomic_checkout.sql
+  const deletingRef = React.useRef(false);
+  const confirmDelete = async () => {
+    // Mesma proteção do checkout: trava síncrona, não depende de re-render.
+    if (deletingRef.current) return;
+    deletingRef.current = true;
+
+    const order = pendingDelete;
+    if (!order) { deletingRef.current = false; return; }
+    setPendingDelete(null);
+    setDeleting(true);
 
     const orderId = order.id;
     const orderItems = Array.isArray(order.items) ? order.items : [];
     setOrders(prev => prev.filter(o => o.id !== orderId));
 
-    const runDelete = async () => {
-      try {
-        const products = await base44.entities.Product.list().catch(() => []);
-        const productLookupByName = new Map(
-          products.map(product => [String(product.name || '').trim().toLowerCase(), product])
-        );
+    try {
+      // Só busca a lista completa de produtos se algum item do pedido não
+      // tiver product_id salvo (pedidos antigos) — pedidos novos sempre têm
+      // product_id, então na maioria das vezes isso nem roda.
+      const needsNameLookup = orderItems.some(item => !item.product_id);
+      const productLookupByName = needsNameLookup
+        ? new Map((await base44.entities.Product.list().catch(() => []))
+            .map(product => [String(product.name || '').trim().toLowerCase(), product]))
+        : null;
 
-        await Promise.allSettled(orderItems.map(async (item) => {
-          const quantity = Number(item.weight_kg ?? item.quantity ?? 0);
-          if (!Number.isFinite(quantity) || quantity <= 0) return null;
+      const resolvedItems = orderItems.map((item) => {
+        let productId = item.product_id || null;
+        if (!productId && productLookupByName) {
+          const match = productLookupByName.get(String(item.product_name || '').trim().toLowerCase());
+          productId = match?.id || null;
+        }
+        return { ...item, product_id: productId };
+      });
 
-          let productId = item.product_id || null;
-          if (!productId) {
-            const match = productLookupByName.get(String(item.product_name || '').trim().toLowerCase());
-            productId = match?.id || null;
-          }
+      const { error: deleteError } = await supabase.rpc('delete_order_and_restore_stock', {
+        p_order_id: orderId,
+        p_items: resolvedItems,
+      });
 
-          if (!productId) return null;
-
-          const shouldRestore = item.stock_deducted !== false;
-          if (!shouldRestore) return null;
-
-          try {
-            await base44.stock.adjustProductStock({ productId, delta: quantity });
-            await base44.stock.refreshProductCost(productId).catch(() => {});
-          } catch (stockError) {
-            console.warn('Falha ao restaurar estoque ao excluir pedido:', stockError);
-          }
-          return null;
-        }));
-
-        await base44.entities.Order.delete(orderId);
-        await logAction('Pedido Excluído', order.restaurant_name);
-      } catch (error) {
-        console.error('Erro ao excluir pedido e restaurar estoque:', error);
-        alert(error?.message || 'Não foi possível excluir o pedido e restaurar o estoque.');
+      if (deleteError) {
+        throw new Error(deleteError.message || 'Não foi possível excluir o pedido e restaurar o estoque.');
       }
-    };
 
-    await new Promise(resolve => window.requestAnimationFrame(() => resolve()));
-    await runDelete();
+      await logAction('Pedido Excluído', order.restaurant_name);
+
+      // Recalcula o custo médio dos produtos afetados — não bloqueia nada,
+      // é só um dado de exibição (não afeta a exatidão do estoque em si).
+      resolvedItems.forEach((item) => {
+        if (item.product_id) {
+          void base44.stock.refreshProductCost(item.product_id).catch(() => {});
+        }
+      });
+    } catch (error) {
+      console.error('Erro ao excluir pedido e restaurar estoque:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao excluir pedido',
+        description: error?.message || 'Não foi possível excluir o pedido e restaurar o estoque.',
+      });
+      load();
+    } finally {
+      setDeleting(false);
+      deletingRef.current = false;
+    }
   };
 
   const hasAdvancedFilter = dateStart || dateEnd || clientSearch || cnpjSearch || nfSearch;
@@ -248,6 +295,23 @@ export default function Orders() {
           ))}
         </div>
       )}
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir pedido?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete && `Excluir pedido de ${pendingDelete.restaurant_name}? O estoque dos itens será restaurado automaticamente.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} disabled={deleting} className="bg-red-600 hover:bg-red-700">
+              {deleting ? 'Excluindo...' : 'Excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

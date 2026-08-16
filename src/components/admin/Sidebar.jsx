@@ -31,26 +31,24 @@ export default function Sidebar({ open, onClose, userRole = 'admin' }) {
   useEffect(() => {
     const fetchCounts = async () => {
       try {
-        const orders = await base44.entities.Order.list('-created_date', 300);
-        const pendingOrders = orders.filter(o => o.status === 'Pedido Emitido');
-        setPendingCount(pendingOrders.length);
-      } catch {
-        setPendingCount(0);
-      }
+        const [orders, currentUser] = await Promise.all([
+          base44.entities.Order.list('-created_date', 300),
+          base44.auth.me().catch(() => null),
+        ]);
 
-      try {
-        const u = await base44.auth.me();
-        if (u && u.role === 'deliverer') {
-          const all = await base44.entities.Order.list('-created_date', 300);
-          setDeliveryCount(all.filter(o => o.deliverer_id === u.id && o.status !== 'Finalizado').length);
+        const pendingOrders = (orders || []).filter(o => o.status === 'Pedido Emitido');
+        setPendingCount(pendingOrders.length);
+
+        if (currentUser?.role === 'deliverer') {
+          setDeliveryCount((orders || []).filter(o => o.deliverer_id === currentUser.id && o.status !== 'Finalizado').length);
+        } else {
+          setDeliveryCount(0);
         }
       } catch {
+        setPendingCount(0);
         setDeliveryCount(0);
       }
     };
-
-    fetchCounts();
-    const intervalId = window.setInterval(fetchCounts, 5000);
 
     const fetchExpirations = async () => {
       try {
@@ -66,13 +64,22 @@ export default function Sidebar({ open, onClose, userRole = 'admin' }) {
           const days = Math.floor((exp - today) / (1000 * 60 * 60 * 24));
           return days <= threshold;
         }).length);
-      } catch {}
+      } catch {
+        setExpirationCount(0);
+      }
     };
+
+    fetchCounts();
     fetchExpirations();
+
+    const intervalId = window.setInterval(() => {
+      fetchCounts();
+    }, 10000);
+
     const unsub = base44.entities.Order.subscribe(() => fetchCounts());
     const unsubProd = base44.entities.Product.subscribe(() => fetchExpirations());
     return () => {
-      if (intervalId) window.clearInterval(intervalId);
+      window.clearInterval(intervalId);
       if (unsub) unsub();
       if (unsubProd) unsubProd();
     };

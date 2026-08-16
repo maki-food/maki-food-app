@@ -318,17 +318,13 @@ export default function PurchaseForm({ purchase, open, onClose, onSave }) {
         const productId = item.productId;
         const received = receivedQuantity(item);
         const existing = existingBatches.find(b => b.product_id === productId && !usedBatchIds.has(b.id));
+        
         if (existing) {
           usedBatchIds.add(existing.id);
-          const previousQuantity = Number(existing.quantity || 0);
-          const quantityDelta = received - previousQuantity;
           await base44.entities.ProductBatch.update(existing.id, {
             quantity: received,
             expiration_date: item.expirationDate || null,
           });
-          if (quantityDelta !== 0) {
-            await base44.stock.adjustProductStock({ productId, delta: quantityDelta, unit: item.unit });
-          }
         } else {
           await base44.stock.addBatch({
             productId,
@@ -341,18 +337,14 @@ export default function PurchaseForm({ purchase, open, onClose, onSave }) {
       }));
 
       await Promise.all(existingBatches.filter(b => !usedBatchIds.has(b.id)).map(async (b) => {
-        const quantityToRemove = Number(b.quantity || 0);
-        if (quantityToRemove > 0) {
-          await base44.stock.adjustProductStock({ productId: b.product_id, delta: -quantityToRemove });
-        }
+        // Quando um lote é deletado, o trigger SQL (recompute_product_stock) dispara
+        // automaticamente e recalcula o estoque total. NÃO precisa chamar adjustProductStock!
         await base44.entities.ProductBatch.delete(b.id);
         affectedProductIds.add(b.product_id);
       }));
 
       await Promise.allSettled(Array.from(affectedProductIds).map(async (productId) => {
-        await base44.stock.refreshProductCost(productId).catch((err) => {
-          console.warn('Não foi possível atualizar o custo do produto após salvar compra:', err);
-        });
+        await base44.stock.refreshProductCost(productId).catch(() => {});
       }));
 
       await logAction(purchase ? 'Compra Editada' : 'Compra Registrada', `Fornecedor: ${supplierName} - NF: ${invoiceNumber} - ${formatBRL(total)}`);
@@ -367,7 +359,7 @@ export default function PurchaseForm({ purchase, open, onClose, onSave }) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{purchase ? 'Editar Compra' : 'Nova Compra de Fornecedor'}</DialogTitle>
         </DialogHeader>

@@ -155,10 +155,11 @@ export const CartProvider = ({ children }) => {
   const clearCart = () => setItems([]);
 
   const total = items.reduce((s, i) => {
-    const effectiveQty = (i.weight_per_unit_kg != null && i.weight_per_unit_kg !== '')
-      ? Number(i.quantity || 0) * Number(i.weight_per_unit_kg)
+    const isWeightProduct = isWeightUnit(i.unit);
+    const effectiveQty = isWeightProduct
+      ? (Number(i.weight_kg || 0) > 0 ? Number(i.weight_kg) : Number(i.quantity || 0))
       : Number(i.quantity || 0);
-    return s + (i.price || 0) * effectiveQty;
+    return s + (Number(i.price || 0) * effectiveQty);
   }, 0);
   const count = items.reduce((s, i) => s + i.quantity, 0);
 

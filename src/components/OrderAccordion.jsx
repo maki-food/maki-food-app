@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ChevronDown, Printer, Trash2, Pencil, MapPin, CreditCard, Phone, MessageSquare, Upload, Check, X, FileText, Maximize2 } from 'lucide-react';
 import { logAction } from '@/lib/audit';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { toast } from '@/components/ui/use-toast';
 
 export default function OrderAccordion({ order, onUpdate, onDelete }) {
   const [expanded, setExpanded] = useState(false);
@@ -223,7 +224,11 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
       originalItemsRef.current = previousItems;
       setEditing(true);
       console.error('Erro ao salvar itens do pedido:', error);
-      alert(error?.message || 'Não foi possível atualizar os itens do pedido e o estoque.');
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao salvar itens do pedido',
+        description: error?.message || 'Não foi possível atualizar os itens do pedido e o estoque.',
+      });
     }
   };
 
@@ -251,7 +256,9 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
       status,
       ...(status === 'Finalizado'
         ? { delivery_completed_at: new Date().toISOString(), delivery_status: 'Finalizado' }
-        : { delivery_status: 'Pendente' }),
+        : {
+            delivery_status: status === 'Com Entregador' ? 'Aceito' : status === 'Saiu para Entrega' ? 'Saiu para Entrega' : order.delivery_status || 'Pendente',
+          }),
     };
 
     await base44.entities.Order.update(order.id, nextPayload);
@@ -265,10 +272,9 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
     const deliverer = deliverers.find(d => d.id === delivererId);
     const updates = {
       deliverer_id: delivererId || null,
-      deliverer_name: deliverer?.full_name || deliverer?.email || '',
-      delivery_status: delivererId ? 'Pendente' : 'Pendente',
+      deliverer_name: delivererId ? (deliverer?.full_name || deliverer?.email || '') : '',
+      delivery_status: delivererId ? 'Pendente' : null,
       status: delivererId ? 'Com Entregador' : 'Em Separação',
-      ...(delivererId ? {} : { deliverer_name: '' }),
     };
     try {
       await base44.entities.Order.update(order.id, updates);
@@ -276,7 +282,13 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
       onUpdate?.();
     } catch (error) {
       setSelectedDeliverer(previousDeliverer);
-      alert(error?.message || 'Não foi possível atualizar o entregador.');
+      // ERA alert() — dialog síncrona que trava a thread (mesma causa do
+      // INP alto que já corrigimos no excluir pedido). Trocado por toast.
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao atualizar entregador',
+        description: error?.message || 'Não foi possível atualizar o entregador.',
+      });
     }
   };
 

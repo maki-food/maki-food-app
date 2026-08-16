@@ -135,10 +135,24 @@ export default function Cart() {
     return `NF-${timestamp.slice(-8)}-${randomSuffix}`;
   };
 
+  const submittingRef = React.useRef(false);
+
   const handleCheckout = async (e) => {
     e.preventDefault();
 
+    // Trava SÍNCRONA, não depende de re-render do React. `disabled={submitting}`
+    // sozinho não impede um duplo-clique/duplo-toque muito rápido: os dois
+    // cliques podem disparar handleCheckout ANTES do React re-renderizar o
+    // botão como desabilitado, e as duas chamadas passam e criam DOIS
+    // pedidos reais (dois INSERTs de verdade) — daí "chega notificação, e
+    // uns segundos depois chega de novo": eram dois pedidos genuínos, não
+    // duplicação de notificação. Essa checagem acontece antes de qualquer
+    // outra coisa, na mesma execução síncrona do evento.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+
     if (!checkoutForm.delivery_address) {
+      submittingRef.current = false;
       toast({
         variant: 'destructive',
         title: 'Erro',
@@ -148,6 +162,7 @@ export default function Cart() {
     }
 
     if (!checkoutForm.payment_method) {
+      submittingRef.current = false;
       toast({
         variant: 'destructive',
         title: 'Erro',
@@ -202,74 +217,33 @@ export default function Cart() {
       const deliveryAddress = checkoutForm.delivery_address || buildFullAddress(restaurant || profileForm);
       const invoiceNumber = await generateInvoiceNumber();
 
-      // MUDANÇA IMPORTANTE: a baixa de estoque agora acontece ANTES de criar o
-      // pedido, e o resultado (stock_deducted) já vai gravado junto na ÚNICA
-      // escrita do pedido — não existe mais uma segunda chamada Order.update()
-      // depois. Isso corrige um bug real: se o Supabase estiver configurado
-      // (via RLS) para só permitir ao cliente CRIAR o próprio pedido, mas não
-      // ATUALIZAR depois de criado, aquela segunda chamada falhava em silêncio
-      // (o erro só ia pro console) e o campo stock_deducted ficava travado em
-      // false pra sempre — mesmo com o estoque corretamente baixado. Resultado:
-      // ao excluir o pedido depois, o sistema achava que nunca tinha baixado
-      // nada e não devolvia o estoque. Se isso já aconteceu com pedidos
-      // antigos, veja a nota no final deste arquivo sobre como corrigi-los.
-      const deductionResults = await Promise.allSettled(orderItems.map(async (item) => {
-        const qtyToDeduct = Number(item.weight_kg != null ? item.weight_kg : item.quantity || 0);
-        if (!item.product_id || qtyToDeduct <= 0) {
-          return null;
-        }
-
-        return base44.stock.deductFefo({
-          productId: item.product_id,
-          quantity: qtyToDeduct,
-        });
-      }));
-
-      const itemsWithDeductionStatus = orderItems.map((item, index) => ({
-        ...item,
-        stock_deducted: deductionResults[index]?.status === 'fulfilled',
-      }));
-
-      const failedDeductions = deductionResults
-        .map((result, index) => ({ result, item: orderItems[index] }))
-        .filter(({ result }) => result.status === 'rejected');
-
-      if (failedDeductions.length > 0) {
-        // Não bloqueia o pedido (ex: pode ser falta momentânea de estoque em
-        // 1 item de vários) mas o admin precisa saber — nunca aparece pro
-        // cliente, só no console e no audit log.
-        console.warn('Falha em uma ou mais baixas de estoque ao criar o pedido:', failedDeductions);
-        void logAction(
-          'Falha na Baixa de Estoque',
-          `Pedido de ${restaurantName}: falha ao baixar ${failedDeductions.map(f => f.item.product_name).join(', ')}`
-        );
-      }
-
-      const createdOrder = await base44.entities.Order.create({
-        created_by_id: currentUser.id,
-        restaurant_name: restaurantName,
-        restaurant_cnpj: restaurantCnpj,
-        invoice_number: invoiceNumber,
-        status: 'Pedido Emitido',
-        delivery_address: deliveryAddress,
-        payment_method: checkoutForm.payment_method,
-        contact_info: contactInfo,
-        observations: checkoutForm.observations,
-        items: itemsWithDeductionStatus,
-        total: grandTotal,
-        shipping_fee: shippingFee,
-      }).catch(async (err) => {
-        // O pedido falhou DEPOIS que já baixamos estoque. Devolve o que foi
-        // deduzido com sucesso pra não perder estoque de um pedido que nunca
-        // existiu.
-        await Promise.allSettled(itemsWithDeductionStatus
-          .filter(item => item.stock_deducted)
-          .map(item => {
-            const qty = Number(item.weight_kg != null ? item.weight_kg : item.quantity || 0);
-            return base44.stock.adjustProductStock({ productId: item.product_id, delta: qty });
-          }));
-        throw err;
+      // CHECKOUT ATÔMICO: criar o pedido e baixar o estoque agora é UMA
+      // única chamada (supabase.rpc) em vez de várias idas separadas ao
+      // banco. Tudo roda dentro de uma transação no Postgres — mais rápido
+      // (1 rodada de rede em vez de ~5) e mais correto (se der erro em
+      // qualquer parte, ex: estoque insuficiente, TUDO é desfeito
+      // automaticamente, não fica pedido "meio criado"). Ver função
+      // create_order_with_stock_deduction em supabase_migration_atomic_checkout.sql
+      const { data: createdOrder, error: orderError } = await supabase.rpc('create_order_with_stock_deduction', {
+        p_order: {
+          created_by_id: currentUser.id,
+          restaurant_name: restaurantName,
+          restaurant_cnpj: restaurantCnpj,
+          invoice_number: invoiceNumber,
+          status: 'Pedido Emitido',
+          delivery_address: deliveryAddress,
+          payment_method: checkoutForm.payment_method,
+          contact_info: contactInfo,
+          observations: checkoutForm.observations,
+          total: grandTotal,
+          shipping_fee: shippingFee,
+        },
+        p_items: orderItems,
       });
+
+      if (orderError) {
+        throw new Error(orderError.message || 'Não foi possível finalizar o pedido.');
+      }
 
       void logAction('Pedido Criado', `${restaurant.restaurant_name} - ${formatBRL(grandTotal)} - Pedido #${createdOrder?.invoice_number || '-'}`);
 
@@ -290,6 +264,7 @@ export default function Cart() {
       });
     } finally {
       setSubmitting(false);
+      submittingRef.current = false;
     }
   };
 

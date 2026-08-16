@@ -39,43 +39,23 @@ export default function MyOrders() {
   useEffect(() => {
     load();
 
-    const intervalId = window.setInterval(() => {
-      load({ silent: true });
-    }, 1000);
-
+    // REMOVIDO: existia aqui um setInterval fazendo essa mesma busca
+    // (user + restaurant + orders — 3 requisições) A CADA 1 SEGUNDO,
+    // rodando JUNTO com o realtime abaixo, que já faz a mesma coisa de
+    // forma orientada a evento. Isso sozinho explica o "3 fetches
+    // idênticos em sequência" que aparece no Network — em 1 segundo esse
+    // polling roda de novo, empilhando com o realtime. É carga desnecessária
+    // no banco e não tem nenhuma vantagem sobre o realtime (que já é
+    // instantâneo). Não reintroduza polling aqui.
     const unsub = base44.entities.Order.subscribe((event) => {
-      if (event.type === 'refresh') {
+      if (event.type === 'refresh' || event.type === 'create' || event.type === 'update' || event.type === 'delete') {
         load({ silent: true });
         return;
       }
-
-      setOrders(prev => {
-        if (event.type === 'create') {
-          if (!event.data || !event.data.id) return prev;
-          return prev.some(o => o.id === event.data.id) ? prev : [event.data, ...prev];
-        }
-
-        if (event.type === 'update') {
-          if (!event.data || !event.data.id) return prev;
-          const next = prev.some(o => o.id === event.data.id)
-            ? prev.map(o => o.id === event.data.id ? { ...o, ...event.data } : o)
-            : [event.data, ...prev];
-          return next;
-        }
-
-        if (event.type === 'delete') {
-          return prev.filter(o => o.id !== event.id);
-        }
-
-        return prev;
-      });
-
-      load({ silent: true });
     });
 
     return () => {
       if (unsub) unsub();
-      window.clearInterval(intervalId);
     };
   }, []);
 
