@@ -72,14 +72,9 @@ export default function Sidebar({ open, onClose, userRole = 'admin' }) {
     fetchCounts();
     fetchExpirations();
 
-    const intervalId = window.setInterval(() => {
-      fetchCounts();
-    }, 10000);
-
     const unsub = base44.entities.Order.subscribe(() => fetchCounts());
     const unsubProd = base44.entities.Product.subscribe(() => fetchExpirations());
     return () => {
-      window.clearInterval(intervalId);
       if (unsub) unsub();
       if (unsubProd) unsubProd();
     };

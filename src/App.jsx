@@ -2,9 +2,12 @@ import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import ScrollToTop from './components/ScrollToTop';
+import { base44 } from '@/api/supabaseClient';
+import { toast } from '@/components/ui/use-toast';
 import Home from '@/pages/Home';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
@@ -36,6 +39,62 @@ import CatalogView from '@/pages/client/CatalogView';
 import { CartProvider } from '@/context/CartContext';
 import { SettingsProvider } from '@/context/SettingsContext';
 
+function GlobalOrderRealtimeAlerts() {
+  const notifiedOrderIdsRef = useRef([]);
+
+  useEffect(() => {
+    const playOrderSound = () => {
+      try {
+        const AudioCtor = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtor) return;
+        const audioContext = new AudioCtor();
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(720, audioContext.currentTime);
+        gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
+        gain.gain.linearRampToValueAtTime(0.18, audioContext.currentTime + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.4);
+        osc.connect(gain);
+        gain.connect(audioContext.destination);
+        osc.start();
+        osc.stop(audioContext.currentTime + 0.45);
+        if (typeof audioContext.resume === 'function') {
+          void audioContext.resume();
+        }
+      } catch {
+        // ignore browser restrictions
+      }
+    };
+
+    const unsub = base44.entities.Order.subscribe((event) => {
+      const order = event?.data;
+      if (!order || !order.id) return;
+      if (event.type !== 'create' && event.type !== 'update') return;
+
+      const now = Date.now();
+      notifiedOrderIdsRef.current = notifiedOrderIdsRef.current.filter(([, ts]) => now - ts < 60000);
+      const alreadyNotified = notifiedOrderIdsRef.current.some(([id]) => id === order.id);
+      if (alreadyNotified) return;
+
+      if (order.status === 'Finalizado') return;
+      notifiedOrderIdsRef.current.push([order.id, now]);
+
+      playOrderSound();
+      toast({
+        title: 'Novo Pedido!',
+        description: `${order.restaurant_name || 'Cliente'} • ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(order.total || 0))}`,
+      });
+    });
+
+    return () => {
+      if (unsub) unsub();
+    };
+  }, []);
+
+  return null;
+}
+
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authChecked } = useAuth();
   const location = useLocation();
@@ -55,6 +114,7 @@ const AuthenticatedApp = () => {
 
   return (
     <>
+      <GlobalOrderRealtimeAlerts />
       <Routes location={backgroundLocation || location}>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />

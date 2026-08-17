@@ -28,8 +28,15 @@ export default function Stock() {
 
   useEffect(() => {
     load();
-    const unsub = base44.entities.Product.subscribe(() => load());
-    return () => { if (unsub) unsub(); };
+
+    const unsub = base44.entities.Product.subscribe((event) => {
+      console.log('🔄 Stock page received realtime event:', event?.type);
+      load();
+    });
+
+    return () => {
+      if (unsub) unsub();
+    };
   }, []);
 
   useEffect(() => {
