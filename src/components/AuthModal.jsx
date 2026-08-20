@@ -72,6 +72,10 @@ export default function AuthModal({ open, onClose, onSuccess }) {
     try {
       const user = await base44.auth.me();
       const fullAddr = [street, number, complement, neighborhood, city, stateVal, zipCode].filter(Boolean).join(', ');
+      await base44.entities.User.update(user.id, {
+        full_name: accountName.trim(),
+        contact_number: contact,
+      });
       await base44.entities.Restaurant.create({
         restaurant_name: restaurantName,
         cnpj,
@@ -182,10 +186,17 @@ export default function AuthModal({ open, onClose, onSuccess }) {
         {step === 'profile' && (
           <form onSubmit={handleProfile} className="space-y-3">
             <div>
-              <Label>Nome *</Label>
+              <Label>Nome da conta *</Label>
               <div className="relative mt-1">
                 <Store className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                <Input required value={restaurantName} onChange={e => setRestaurantName(e.target.value)} className="pl-9" placeholder="Seu nome ou o nome do restaurante" />
+                <Input required value={accountName} onChange={e => setAccountName(e.target.value)} className="pl-9" placeholder="Seu nome " />
+              </div>
+            </div>
+            <div>
+              <Label>Nome do restaurante (opcional)</Label>
+              <div className="relative mt-1">
+                <Store className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                <Input value={restaurantName} onChange={e => setRestaurantName(e.target.value)} className="pl-9" placeholder="Nome do restaurante" />
               </div>
             </div>
             <div>
@@ -196,10 +207,10 @@ export default function AuthModal({ open, onClose, onSuccess }) {
               </div>
             </div>
             <div>
-              <Label>Telefone / Contato *</Label>
+              <Label>Telefone / Contato do restaurante (opcional)</Label>
               <div className="relative mt-1">
                 <Phone className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                <Input required value={contact} onChange={e => setContact(maskPhone(e.target.value))} className="pl-9" placeholder="(11) 99999-9999" />
+                <Input value={contact} onChange={e => setContact(maskPhone(e.target.value))} className="pl-9" placeholder="(11) 99999-9999" />
               </div>
             </div>
             <div>

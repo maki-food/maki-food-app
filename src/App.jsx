@@ -45,32 +45,21 @@ function GlobalOrderRealtimeAlerts() {
   useEffect(() => {
     const playOrderSound = () => {
       try {
-        const AudioCtor = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtor) return;
-        const audioContext = new AudioCtor();
-        const osc = audioContext.createOscillator();
-        const gain = audioContext.createGain();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(720, audioContext.currentTime);
-        gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
-        gain.gain.linearRampToValueAtTime(0.18, audioContext.currentTime + 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.4);
-        osc.connect(gain);
-        gain.connect(audioContext.destination);
-        osc.start();
-        osc.stop(audioContext.currentTime + 0.45);
-        if (typeof audioContext.resume === 'function') {
-          void audioContext.resume();
-        }
+        const audio = new Audio('/order-alert-makifood.mp3');
+        audio.volume = 0.7;
+        void audio.play().catch(() => {
+          // navegador pode bloquear play automático sem interação prévia
+          // do usuário na aba — não tem o que fazer nesse caso, ignora.
+        });
       } catch {
-        // ignore browser restrictions
+        // ignore
       }
     };
 
     const unsub = base44.entities.Order.subscribe((event) => {
       const order = event?.data;
       if (!order || !order.id) return;
-      if (event.type !== 'create' && event.type !== 'update') return;
+      if (event.type !== 'create') return;
 
       const now = Date.now();
       notifiedOrderIdsRef.current = notifiedOrderIdsRef.current.filter(([, ts]) => now - ts < 60000);

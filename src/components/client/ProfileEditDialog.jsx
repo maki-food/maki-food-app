@@ -107,6 +107,10 @@ export default function ProfileEditDialog({ open, onClose, user, onSaved }) {
         neighborhood: form.neighborhood, city: form.city, state: form.state, zip_code: form.zip_code, address_notes: form.address_notes || null,
         address: fullAddr,
       };
+      await base44.entities.User.update(user.id, {
+        full_name: form.account_name.trim(),
+        contact_number: form.contact_number,
+      });
       if (restaurant) {
         await base44.entities.Restaurant.update(restaurant.id, payload);
       } else {
@@ -153,16 +157,16 @@ export default function ProfileEditDialog({ open, onClose, user, onSaved }) {
               <Input required value={form.account_name} onChange={e => setForm({ ...form, account_name: e.target.value })} className="mt-1" />
             </div>
             <div>
-              <Label>Nome do Restaurante *</Label>
-              <Input required value={form.restaurant_name} onChange={e => setForm({ ...form, restaurant_name: e.target.value })} className="mt-1" />
+              <Label>Nome do Restaurante (opcional)</Label>
+              <Input value={form.restaurant_name} onChange={e => setForm({ ...form, restaurant_name: e.target.value })} className="mt-1" />
             </div>
             <div>
               <Label>CNPJ (opcional)</Label>
               <Input value={form.cnpj} onChange={e => setForm({ ...form, cnpj: maskCNPJ(e.target.value) })} className="mt-1" placeholder="00.000.000/0000-00" />
             </div>
             <div>
-              <Label>Número de Contato *</Label>
-              <Input required value={form.contact_number} onChange={e => setForm({ ...form, contact_number: maskPhone(e.target.value) })} className="mt-1" placeholder="(11) 99999-9999" />
+              <Label>Número de Contato do restaurante (opcional)</Label>
+              <Input value={form.contact_number} onChange={e => setForm({ ...form, contact_number: maskPhone(e.target.value) })} className="mt-1" placeholder="(11) 99999-9999" />
             </div>
             <div className="pt-2 border-t border-slate-100">
               <Label>Endereço 1 (principal) *</Label>

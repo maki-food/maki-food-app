@@ -211,9 +211,14 @@ export default function Cart() {
         }
       }
 
-      const restaurantName = restaurant?.restaurant_name || profileForm.restaurant_name || currentUser?.full_name || 'Cliente';
+      const accountName = currentUser.full_name || currentUser.email || 'Cliente';
+      const restaurantName = restaurant?.restaurant_name || profileForm.restaurant_name || accountName;
       const restaurantCnpj = restaurant?.cnpj || profileForm.cnpj || '';
-      const contactInfo = restaurant?.contact_number || profileForm.contact_number || currentUser?.contact_number || '';
+      const restaurantPhone = restaurant?.contact_number || profileForm.contact_number || '';
+      const contactInfo = [
+        currentUser.contact_number ? `Pessoal: ${currentUser.contact_number}` : '',
+        restaurantPhone ? `Restaurante: ${restaurantPhone}` : '',
+      ].filter(Boolean).join(' | ');
       const deliveryAddress = checkoutForm.delivery_address || buildFullAddress(restaurant || profileForm);
       const invoiceNumber = await generateInvoiceNumber();
 
@@ -227,6 +232,7 @@ export default function Cart() {
       const { data: createdOrder, error: orderError } = await supabase.rpc('create_order_with_stock_deduction', {
         p_order: {
           created_by_id: currentUser.id,
+          account_name: accountName,
           restaurant_name: restaurantName,
           restaurant_cnpj: restaurantCnpj,
           invoice_number: invoiceNumber,

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { base44 } from '@/api/supabaseClient';
 import { useSettings } from '@/context/SettingsContext';
+import { hasPermission } from '@/lib/permissions';
 import { LayoutDashboard, Package, Boxes, ShoppingCart, ClipboardList, Settings, Fish, X, LogOut, Tag, Calculator, Bike, Flame, CalendarClock, Layers } from 'lucide-react';
 
 const allMenuItems = [
@@ -19,14 +20,20 @@ const allMenuItems = [
   { label: 'Configurações', path: '/admin/configuracoes', icon: Settings, roles: ['admin'] },
 ];
 
-export default function Sidebar({ open, onClose, userRole = 'admin' }) {
+export default function Sidebar({ open, onClose, user, userRole = 'admin' }) {
   const location = useLocation();
   const { settings } = useSettings();
   const [pendingCount, setPendingCount] = useState(0);
   const [deliveryCount, setDeliveryCount] = useState(0);
   const [expirationCount, setExpirationCount] = useState(0);
 
-  const menuItems = allMenuItems.filter(item => item.roles.includes(userRole));
+  const menuPermissions = {
+    '/admin': 'dashboard', '/admin/produtos': 'products_view', '/admin/variacoes': 'variations',
+    '/admin/estoque': 'stock_view', '/admin/compras': 'purchases', '/admin/categorias': 'categories',
+    '/admin/promocoes': 'promotions', '/admin/ficha-tecnica': 'recipe', '/admin/validades': 'expirations',
+    '/admin/pedidos': 'orders', '/admin/entregas': 'deliveries', '/admin/configuracoes': 'settings',
+  };
+  const menuItems = allMenuItems.filter(item => item.roles.includes(userRole) && hasPermission(user, menuPermissions[item.path]));
 
   useEffect(() => {
     const fetchCounts = async () => {

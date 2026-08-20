@@ -201,7 +201,7 @@ export default function ProductForm({ product, open, onClose, onSave }) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-6xl w-full max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{product ? 'Editar Produto' : 'Publicar Produto do Estoque'}</DialogTitle>
         </DialogHeader>

@@ -8,9 +8,12 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { User, ClipboardList, UserCog, LogOut, HelpCircle, ShieldCheck, ChevronRight, MapPin, Loader2, Plus, Trash2, Package, Edit } from 'lucide-react';
 import { formatBRL, formatDate, getOrderDisplayItems, getOrderItemQuantityLabel, getOrderItemSubtotal } from '@/lib/format';
+import { maskCNPJ, maskPhone } from '@/lib/masks';
 import StatusBadge from '@/components/StatusBadge';
 
 const emptyForm = {
+  full_name: '',
+  personal_phone: '',
   account_name: '',
   restaurant_name: '',
   cnpj: '',
@@ -84,6 +87,8 @@ export default function Account() {
       const r = rests[0];
       setRestaurant(r);
       setForm({
+        full_name: currentUser.full_name || '',
+        personal_phone: currentUser.contact_number || '',
         account_name: r.account_name || currentUser.full_name || '',
         restaurant_name: r.restaurant_name || '',
         cnpj: r.cnpj || '',
@@ -99,7 +104,12 @@ export default function Account() {
       });
     } else {
       setRestaurant(null);
-      setForm({ ...emptyForm, account_name: currentUser.full_name || '' });
+      setForm({
+        ...emptyForm,
+        full_name: currentUser.full_name || '',
+        personal_phone: currentUser.contact_number || '',
+        account_name: currentUser.full_name || '',
+      });
     }
 
     if (Array.isArray(addrs) && addrs.length > 0) {
@@ -145,7 +155,7 @@ export default function Account() {
     }
 
     const rests = await base44.entities.Restaurant.filter({ user_id: currentUser.id }).catch(() => []);
-    setAccountName(Array.isArray(rests) && rests.length > 0 ? rests[0]?.account_name || null : null);
+    setAccountName(currentUser.full_name || (Array.isArray(rests) && rests.length > 0 ? rests[0]?.account_name || null : null));
     await loadProfileData(currentUser);
     setEditingAddress(null);
     if (!silent) setLoadingProfile(false);
@@ -247,9 +257,15 @@ export default function Account() {
 
     try {
       if (selectedSection === 'personal') {
+        await base44.entities.User.update(user.id, {
+          full_name: form.full_name.trim(),
+          contact_number: form.personal_phone,
+        });
+
         const payload = {
-          account_name: form.account_name,
-          restaurant_name: form.restaurant_name,
+          account_name: form.full_name.trim(),
+          restaurant_name: form.restaurant_name.trim(),
+          cnpj: form.cnpj || null,
           contact_number: form.contact_number,
         };
         if (restaurant) {
@@ -338,16 +354,35 @@ export default function Account() {
       return (
         <form className="space-y-4">
           <div>
-            <Label>E-mail</Label>
+            <Label>Nome</Label>
+            <Input required value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} className="mt-1" placeholder="Seu Nome" />
+          </div>
+          <div>
+            <Label>E-mail cadastrado</Label>
             <Input disabled value={user.email || ''} className="mt-1 bg-slate-100 cursor-not-allowed" />
           </div>
           <div>
-            <Label>Nome do Restaurante *</Label>
-            <Input required value={form.restaurant_name} onChange={e => setForm({ ...form, restaurant_name: e.target.value })} className="mt-1" />
+            <Label>Telefone pessoal</Label>
+            <Input value={form.personal_phone} onChange={e => setForm({ ...form, personal_phone: maskPhone(e.target.value) })} className="mt-1" placeholder="(11) 99999-9999" />
           </div>
-          <div>
-            <Label>Número de contato *</Label>
-            <Input required value={form.contact_number} onChange={e => setForm({ ...form, contact_number: e.target.value })} className="mt-1" placeholder="(11) 99999-9999" />
+
+          <div className="border-t border-slate-100 pt-4 space-y-4">
+            <div>
+              <h3 className="font-semibold text-slate-900">Meus restaurantes cadastrados</h3>
+              <p className="text-sm text-slate-500 mt-1">Atualize os dados usados nos seus pedidos.</p>
+            </div>
+            <div>
+              <Label>Nome do restaurante (opcional)</Label>
+              <Input value={form.restaurant_name} onChange={e => setForm({ ...form, restaurant_name: e.target.value })} className="mt-1" />
+            </div>
+            <div>
+              <Label>CNPJ (opcional)</Label>
+              <Input value={form.cnpj} onChange={e => setForm({ ...form, cnpj: maskCNPJ(e.target.value) })} className="mt-1" placeholder="00.000.000/0000-00" />
+            </div>
+            <div>
+              <Label>Telefone do restaurante (opcional)</Label>
+              <Input value={form.contact_number} onChange={e => setForm({ ...form, contact_number: maskPhone(e.target.value) })} className="mt-1" placeholder="(11) 99999-9999" />
+            </div>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
             <Button type="button" variant="outline" onClick={() => load()} className="w-full sm:w-auto">

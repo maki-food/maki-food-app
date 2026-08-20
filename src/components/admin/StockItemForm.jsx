@@ -25,7 +25,7 @@ const emptyForm = {
   stock_quantity: '0',
 };
 
-// Formata data para YYYYMMDD
+// Formata data para DDMMYYYY
 const formatDateForBatch = (dateStr) => {
   if (!dateStr) return '00000000';
   try {
@@ -33,7 +33,7 @@ const formatDateForBatch = (dateStr) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
-    return `${year}${month}${day}`;
+    return `${day}${month}${year}`;
   } catch {
     return '00000000';
   }

@@ -4,12 +4,16 @@ import { formatBRL } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import ProductForm from '@/components/admin/ProductForm';
 import { Plus, Pencil, Trash2, Package, Star, Pause, Play, Sparkles } from 'lucide-react';
+import { useAuth } from '@/lib/AuthContext';
+import { hasPermission } from '@/lib/permissions';
 
 export default function Products() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const { user } = useAuth();
+  const canManage = hasPermission(user, 'products_manage');
 
   const load = async () => {
     try { setProducts(await base44.entities.Product.list('-created_date')); } catch {}
@@ -57,9 +61,9 @@ export default function Products() {
           <h1 className="text-2xl font-bold text-slate-900">Produtos</h1>
           <p className="text-sm text-slate-500">{products.length} produtos cadastrados</p>
         </div>
-        <Button onClick={() => { setEditing(null); setFormOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700">
+        {canManage && <Button onClick={() => { setEditing(null); setFormOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700">
           <Plus className="w-4 h-4 mr-1" /> Novo Produto
-        </Button>
+        </Button>}
       </div>
 
       {loading ? (
@@ -104,7 +108,7 @@ export default function Products() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-1">
+                    {canManage && <div className="flex justify-end gap-1">
                       <button onClick={() => toggleHighlight(p)} title="Marcar como destaque" className={`p-2 rounded-lg hover:bg-slate-100 ${p.is_promotion ? 'text-amber-500' : 'text-slate-400 hover:text-amber-500'}`}>
                         <Star className={`w-4 h-4 ${p.is_promotion ? 'fill-amber-500' : ''}`} />
                       </button>
@@ -120,7 +124,7 @@ export default function Products() {
                       <button onClick={() => handleDelete(p.id)} className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-slate-100">
                         <Trash2 className="w-4 h-4" />
                       </button>
-                    </div>
+                    </div>}
                   </td>
                 </tr>
               ))}

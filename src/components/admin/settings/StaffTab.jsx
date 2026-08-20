@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { User, Mail, Shield, Loader2, UserPlus, Users, Bike, Store, Pencil, Trash2, Phone } from 'lucide-react';
+import { permissionGroups, getPermissions } from '@/lib/permissions';
 
 const roleConfig = {
   admin: { label: 'Administrador', icon: Shield, color: 'bg-emerald-100 text-emerald-600' },
@@ -25,7 +26,7 @@ export default function StaffTab() {
   const [registering, setRegistering] = useState(false);
   const [regError, setRegError] = useState('');
   const [editingUser, setEditingUser] = useState(null);
-  const [editForm, setEditForm] = useState({ full_name: '', email: '', contact_number: '', role: 'user' });
+  const [editForm, setEditForm] = useState({ full_name: '', email: '', contact_number: '', role: 'user', permissions: {} });
   const [editError, setEditError] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -65,6 +66,7 @@ export default function StaffTab() {
       email: u.email || '',
       contact_number: u.contact_number || '',
       role: u.role || 'user',
+      permissions: getPermissions(u),
       new_password: '',
     });
     setEditError('');
@@ -78,6 +80,7 @@ export default function StaffTab() {
         full_name: editForm.full_name,
         contact_number: editForm.contact_number,
         role: editForm.role,
+        permissions: editForm.permissions,
       });
       if (editForm.email !== editingUser.email || editForm.new_password) {
         await base44.auth.adminUpdateStaffCredentials({
@@ -251,6 +254,27 @@ export default function StaffTab() {
                   <SelectItem value="user">Cliente</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="border-t border-slate-100 pt-3">
+              <Label>Permissões individuais</Label>
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
+                {permissionGroups.map(permission => (
+                  <label key={permission.key} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    <span>{permission.label}</span>
+                    <input
+                      type="checkbox"
+                      checked={editForm.permissions?.[permission.key] === true}
+                      disabled={editForm.role === 'admin'}
+                      onChange={e => setEditForm({
+                        ...editForm,
+                        permissions: { ...editForm.permissions, [permission.key]: e.target.checked },
+                      })}
+                      className="h-4 w-4 accent-emerald-600"
+                    />
+                  </label>
+                ))}
+              </div>
+              {editForm.role === 'admin' && <p className="text-xs text-slate-400 mt-2">Administradores têm acesso total automaticamente.</p>}
             </div>
             {editError && (
               <div className="p-3 rounded-lg bg-red-50 text-red-600 text-sm">{editError}</div>

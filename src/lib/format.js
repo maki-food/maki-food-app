@@ -97,7 +97,7 @@ export const printOrder = (order, settings = {}) => {
         <tbody>${itemsHTML}</tbody>
       </table>
       <div style="display:flex;justify-content:flex-end">
-        <div style="width:180px;text-align:right;font-size:13px;margin-top:12px;color:#666;font-family:Arial, sans-serif">
+        <div style="width:180px;text-align:right;font-size:13px;margin-top:12px;color:#000;font-family:Arial, sans-serif">
           <p style="margin:0">Subtotal: <span class="money-symbol">R$</span><span class="mono-number">${formatBRL((order.total || 0) - (order.shipping_fee || 0)).replace('R$', '').trim()}</span></p>
           <p style="margin:0">Frete: ${(order.shipping_fee || 0) > 0 ? `<span class=\"money-symbol\">R$</span><span class=\"mono-number\">${formatBRL(order.shipping_fee).replace('R$', '').trim()}</span>` : 'Grátis'}</p>
         </div>
@@ -110,7 +110,7 @@ export const printOrder = (order, settings = {}) => {
 
   const w = window.open('', '_blank');
   if (!w) { alert('Permita popups para imprimir o pedido.'); return; }
-  w.document.write(`<html><head><title>Pedido - ${order.restaurant_name}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:24px;max-width:600px;margin:0 auto}.copy{page-break-after:always}.copy:last-child{page-break-after:auto}.mono-number{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace; font-variant-numeric: tabular-nums; -webkit-font-feature-settings: "tnum" 1; font-feature-settings: "tnum" 1; display:inline-block; text-align:right}.money-symbol{color:#444;margin-right:6px}.table-money{white-space:nowrap}</style></head><body>${buildCopy()}</body></html>`);
+  w.document.write(`<html><head><title>Pedido - ${order.restaurant_name}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:24px;max-width:600px;margin:0 auto;color:#000}.copy{page-break-after:always}.copy:last-child{page-break-after:auto}.mono-number{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace; font-variant-numeric: tabular-nums; -webkit-font-feature-settings: "tnum" 1; font-feature-settings: "tnum" 1; display:inline-block; text-align:right;color:#000}.money-symbol{color:#000;margin-right:6px}.table-money{white-space:nowrap;color:#000}</style></head><body>${buildCopy()}</body></html>`);
   w.document.close();
   setTimeout(() => { w.focus(); w.print(); }, 300);
 };

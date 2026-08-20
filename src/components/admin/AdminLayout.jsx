@@ -4,6 +4,7 @@ import { base44 } from '@/api/supabaseClient';
 import { useSettings } from '@/context/SettingsContext';
 import Sidebar from './Sidebar';
 import { Menu, X, LogOut } from 'lucide-react';
+import { hasPermission } from '@/lib/permissions';
 
 const adminRoles = ['admin', 'seller', 'deliverer'];
 
@@ -39,6 +40,22 @@ export default function AdminLayout() {
     return <Navigate to="/admin/entregas" replace />;
   }
 
+  const routePermissions = {
+    '/admin': 'dashboard',
+    '/admin/produtos': 'products_view',
+    '/admin/variacoes': 'variations',
+    '/admin/estoque': 'stock_view',
+    '/admin/compras': 'purchases',
+    '/admin/categorias': 'categories',
+    '/admin/promocoes': 'promotions',
+    '/admin/ficha-tecnica': 'recipe',
+    '/admin/validades': 'expirations',
+    '/admin/pedidos': 'orders',
+    '/admin/entregas': 'deliveries',
+    '/admin/configuracoes': 'settings',
+  };
+  const requiredPermission = routePermissions[location.pathname];
+
   const handleLogout = () => {
     const cartBackup = localStorage.getItem('cart');
     localStorage.clear();
@@ -50,7 +67,7 @@ export default function AdminLayout() {
   return (
     <div className="min-h-screen bg-background">
       {user.role !== 'deliverer' && (
-        <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} userRole={user.role} />
+        <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} userRole={user.role} />
       )}
       <div className={user.role === 'deliverer' ? '' : 'lg:ml-64'}>
         <header className="sticky top-0 z-30 bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
@@ -72,7 +89,12 @@ export default function AdminLayout() {
           </button>
         </header>
         <main className="p-4 lg:p-8">
-          <Outlet />
+          {requiredPermission && !hasPermission(user, requiredPermission) ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
+              <h1 className="text-xl font-semibold text-slate-900">Acesso não permitido</h1>
+              <p className="mt-2 text-sm text-slate-500">Você não tem permissão para acessar esta página.</p>
+            </div>
+          ) : <Outlet />}
         </main>
       </div>
     </div>

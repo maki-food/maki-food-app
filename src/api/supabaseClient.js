@@ -20,6 +20,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+// TEMPORÁRIO — só pra diagnóstico via Console do navegador. Remover depois
+// de resolvido (deixa o cliente supabase acessível digitando `supabase` no
+// F12 → Console, pra rodar comandos de teste manualmente).
+if (typeof window !== 'undefined') {
+  window.supabase = supabase;
+}
+
 // -----------------------------------------------------------------------
 // CORREÇÃO: manter o Realtime autenticado com o token atual.
 // Sem isso, o WebSocket do Realtime autentica uma vez (no load da página)
@@ -164,6 +171,11 @@ function makeEntity(tableName) {
             }
           )
           .subscribe((status) => {
+            // LOG TEMPORÁRIO DE DIAGNÓSTICO — mostra se cada canal
+            // realmente conecta ('SUBSCRIBED') ou falha, e por qual tabela.
+            // Pode remover depois de descobrirmos a causa do 'products' não
+            // chegar em tempo real na tela de Estoque.
+            console.log(`📡 Realtime [${tableName}] status:`, status);
             if (reconnecting || stopped) return;
             if (status === 'SUBSCRIBED') {
               channel = currentChannel;
@@ -237,6 +249,7 @@ async function me() {
     email: user.email,
     full_name: profile?.full_name || user.user_metadata?.full_name || '',
     role: profile?.role || 'user',
+    permissions: profile?.permissions || {},
     contact_number: profile?.contact_number || '',
     created_date: profile?.created_date || user.created_at,
   };

@@ -8,6 +8,8 @@ import ReturnStockModal from '@/components/admin/ReturnStockModal';
 import StockItemForm from '@/components/admin/StockItemForm';
 import { logAction } from '@/lib/audit';
 import { AlertTriangle, Package, Plus, ClipboardMinus, PlusCircle } from 'lucide-react';
+import { useAuth } from '@/lib/AuthContext';
+import { hasPermission } from '@/lib/permissions';
 
 export default function Stock() {
   const [products, setProducts] = useState([]);
@@ -20,6 +22,9 @@ export default function Stock() {
   const [editingItem, setEditingItem] = useState(null);
   const [searchParams] = useSearchParams();
   const highlightId = searchParams.get('highlight');
+  const { user } = useAuth();
+  const canEdit = hasPermission(user, 'stock_edit');
+  const canWriteoff = canEdit || hasPermission(user, 'stock_writeoff');
 
   const load = async () => {
     try { setProducts(await base44.entities.Product.list()); } catch {}
@@ -34,8 +39,28 @@ export default function Stock() {
       load();
     });
 
+    // CONTORNO: descobrimos (testando em conjunto com o dono do projeto)
+    // que uma transação que atualiza 'products' E insere em 'orders' ao
+    // mesmo tempo (exatamente o que acontece no checkout do cliente) faz
+    // o Supabase Realtime NÃO entregar o evento de 'products' — mesmo com
+    // toda a configuração (RLS, replicação, publicação) confirmada
+    // correta. É um comportamento específico do Realtime nessa situação,
+    // não um bug do nosso código. Testado e confirmado: o evento de
+    // 'orders' da MESMA transação chega normalmente. Então, além de
+    // escutar 'products' diretamente (cobre ajustes manuais de estoque,
+    // compras, devoluções — que continuam funcionando em tempo real
+    // normalmente), também escutamos 'orders' aqui e recarregamos os
+    // produtos quando qualquer pedido for criado/editado/excluído — isso
+    // cobre exatamente o caso que estava faltando (cliente finalizando
+    // pedido) sem depender do evento de 'products' que não chega.
+    const unsubOrders = base44.entities.Order.subscribe((event) => {
+      console.log('🔄 Stock page received realtime event (via orders):', event?.type);
+      load();
+    });
+
     return () => {
       if (unsub) unsub();
+      if (unsubOrders) unsubOrders();
     };
   }, []);
 
@@ -68,15 +93,15 @@ export default function Stock() {
           <p className="text-sm text-slate-500">{products.length} itens • {lowCount} com estoque baixo</p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => setNewItemOpen(true)} className="bg-emerald-600 hover:bg-emerald-700">
+          {canEdit && <Button onClick={() => setNewItemOpen(true)} className="bg-emerald-600 hover:bg-emerald-700">
             <PlusCircle className="w-4 h-4 mr-1" /> Novo Item
-          </Button>
-          <Button onClick={() => setReturnStockOpen(true)} variant="outline" className="text-slate-600 border-slate-200 hover:bg-slate-50">
+          </Button>}
+          {canWriteoff && <Button onClick={() => setReturnStockOpen(true)} variant="outline" className="text-slate-600 border-slate-200 hover:bg-slate-50">
             <Plus className="w-4 h-4 mr-1" /> Devolver ao Estoque
-          </Button>
-          <Button onClick={() => setWriteOffOpen(true)} variant="outline" className="text-red-600 border-red-200 hover:bg-red-50">
+          </Button>}
+          {canWriteoff && <Button onClick={() => setWriteOffOpen(true)} variant="outline" className="text-red-600 border-red-200 hover:bg-red-50">
             <ClipboardMinus className="w-4 h-4 mr-1" /> Baixa de Estoque
-          </Button>
+          </Button>}
         </div>
       </div>
 
@@ -117,7 +142,7 @@ export default function Stock() {
               <th className="px-4 py-3 text-center">Estoque Atual</th>
               <th className="px-4 py-3 text-center hidden sm:table-cell">Mínimo</th>
               <th className="px-4 py-3 text-center">Status</th>
-              <th className="px-4 py-3 text-center">Editar</th>
+              {canEdit && <th className="px-4 py-3 text-center">Editar</th>}
             </tr>
           </thead>
           <tbody>
@@ -152,11 +177,9 @@ export default function Stock() {
                       <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">OK</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-center">
-                    <button onClick={() => setEditingItem(p)} className="text-xs font-medium text-slate-500 hover:text-emerald-600 px-2 py-1 rounded-lg hover:bg-slate-100">
-                      Editar
-                    </button>
-                  </td>
+                  {canEdit && <td className="px-4 py-3 text-center">
+                    <button onClick={() => setEditingItem(p)} className="text-xs font-medium text-slate-500 hover:text-emerald-600 px-2 py-1 rounded-lg hover:bg-slate-100">Editar</button>
+                  </td>}
                 </tr>
               );
             })}

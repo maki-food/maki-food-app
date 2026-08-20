@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/supabaseClient';
+import { base44, supabase } from '@/api/supabaseClient';
 import { formatBRL, formatDate, getOrderDisplayItems, getOrderItemQuantityLabel, getOrderItemSubtotal } from '@/lib/format';
 import { logAction } from '@/lib/audit';
 import { Button } from '@/components/ui/button';
@@ -12,8 +12,8 @@ export default function Deliveries() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(null);
   const [completedOrders, setCompletedOrders] = useState([]);
-  const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
   const [sequenceByOrderId, setSequenceByOrderId] = useState({});
+  const [sequencePickerOpen, setSequencePickerOpen] = useState(null);
 
   const loadOrders = async (currentUser) => {
     if (!currentUser) return;
@@ -21,6 +21,11 @@ export default function Deliveries() {
       const all = await base44.entities.Order.list('-created_date', 200);
       const mine = all.filter(o => o.deliverer_id === currentUser.id);
       const active = mine.filter(o => o.status !== 'Finalizado');
+      if (active.length === 1 && Number(active[0].delivery_sequence) !== 1) {
+        const onlyOrder = active[0];
+        await base44.entities.Order.update(onlyOrder.id, { delivery_sequence: 1 });
+        active[0] = { ...onlyOrder, delivery_sequence: 1 };
+      }
       setOrders(active);
       setCompletedOrders(mine.filter(o => o.status === 'Finalizado' && isToday(o.delivery_completed_at || o.updated_date || o.created_date)));
       setSequenceByOrderId(Object.fromEntries(active.map(o => [o.id, o.delivery_sequence != null ? String(o.delivery_sequence) : ''])));
@@ -44,6 +49,7 @@ export default function Deliveries() {
 
   useEffect(() => {
     let unsub;
+    let assignmentChannel;
     let active = true;
 
     const init = async () => {
@@ -59,9 +65,25 @@ export default function Deliveries() {
             loadOrders(u);
             return;
           }
-          if (event.type === 'update' && event.data.deliverer_id === u.id && event.data.status === 'Finalizado') {
-            setOrders(prev => prev.filter(o => o.id !== event.data.id));
-            setCompletedOrders(prev => [event.data, ...prev.filter(o => o.id !== event.data.id)].filter(o => isToday(o.delivery_completed_at || o.updated_date || o.created_date)));
+          if (event.type === 'update') {
+            const updatedOrder = event.data;
+            const previousOrder = event.previousData;
+            const wasAssignedToCurrentUser = previousOrder?.deliverer_id === u.id;
+            const isAssignedToCurrentUser = updatedOrder?.deliverer_id === u.id;
+
+            if (!isAssignedToCurrentUser || updatedOrder.status === 'Finalizado') {
+              setOrders(prev => prev.filter(order => order.id !== updatedOrder.id));
+              if (wasAssignedToCurrentUser && updatedOrder.status === 'Finalizado') {
+                setCompletedOrders(prev => [updatedOrder, ...prev.filter(order => order.id !== updatedOrder.id)]);
+              }
+              return;
+            }
+
+            setOrders(prev => {
+              const alreadyListed = prev.some(order => order.id === updatedOrder.id);
+              if (!alreadyListed) return [updatedOrder, ...prev];
+              return prev.map(order => order.id === updatedOrder.id ? { ...order, ...updatedOrder } : order);
+            });
             return;
           }
           setOrders(prev => {
@@ -80,6 +102,20 @@ export default function Deliveries() {
           });
           if (event.type === 'delete') setCompletedOrders(prev => prev.filter(o => o.id !== event.id));
         });
+
+        assignmentChannel = supabase
+          .channel('delivery-assignment-events')
+          .on('broadcast', { event: 'assignment_changed' }, ({ payload }) => {
+            if (!active || !payload?.orderId) return;
+            if (payload.previousDelivererId === u.id && payload.newDelivererId !== u.id) {
+              setOrders(prev => prev.filter(order => order.id !== payload.orderId));
+              return;
+            }
+            if (payload.newDelivererId === u.id) {
+              loadOrders(u);
+            }
+          })
+          .subscribe();
       } catch (initError) {
         console.error('Erro no painel de entregas:', initError);
         if (active) {
@@ -89,7 +125,11 @@ export default function Deliveries() {
     };
 
     init();
-    return () => { active = false; if (unsub) unsub(); };
+    return () => {
+      active = false;
+      if (unsub) unsub();
+      if (assignmentChannel) void supabase.removeChannel(assignmentChannel);
+    };
   }, []);
 
   const updateDeliveryStatus = async (order, newStatus) => {
@@ -107,6 +147,27 @@ export default function Deliveries() {
       updates.delivery_completed_at = new Date().toISOString();
     }
     await base44.entities.Order.update(order.id, updates);
+
+    if (newStatus === 'Finalizado' && order.delivery_sequence != null && order.deliverer_id) {
+      const sequence = Number(order.delivery_sequence);
+      if (Number.isFinite(sequence)) {
+        const assignedOrders = await base44.entities.Order
+          .filter({ deliverer_id: order.deliverer_id })
+          .catch(() => []);
+        const followingOrders = assignedOrders.filter(item => (
+          item.id !== order.id
+          && item.status !== 'Finalizado'
+          && Number(item.delivery_sequence) > sequence
+        ));
+
+        await Promise.all(followingOrders.map(item => (
+          base44.entities.Order.update(item.id, {
+            delivery_sequence: Number(item.delivery_sequence) - 1,
+          })
+        )));
+      }
+    }
+
     await logAction('Entrega Atualizada', `${order.restaurant_name}: ${newStatus}`);
     if (user) await loadOrders(user);
   };
@@ -118,36 +179,26 @@ export default function Deliveries() {
     }));
   };
 
-  const saveOrderSequence = async (order) => {
-    const rawValue = sequenceByOrderId[order.id];
+  const getAvailableSequences = (order) => {
+    const usedSequences = new Set(
+      orders
+        .filter(item => item.id !== order.id && item.delivery_sequence != null)
+        .map(item => Number(item.delivery_sequence))
+        .filter(Number.isFinite)
+    );
+    const total = Math.max(orders.length, 1);
+    return Array.from({ length: total }, (_, index) => index + 1)
+      .filter(sequence => !usedSequences.has(sequence) || Number(order.delivery_sequence) === sequence);
+  };
+
+  const saveOrderSequence = async (order, selectedSequence = sequenceByOrderId[order.id]) => {
+    const rawValue = selectedSequence;
     const sequence = rawValue !== '' ? Math.max(1, Number(rawValue) || 1) : null;
     await base44.entities.Order.update(order.id, {
       delivery_sequence: sequence,
     });
+    setSequencePickerOpen(null);
     await logAction('Ordem de Entrega Atualizada', `${order.restaurant_name}: posição ${sequence || 'não definida'}`);
-    if (user) await loadOrders(user);
-  };
-
-  const toggleOrderSelection = (orderId) => {
-    setSelectedOrderIds((prev) => {
-      const copy = new Set(prev);
-      if (copy.has(orderId)) copy.delete(orderId);
-      else copy.add(orderId);
-      return copy;
-    });
-  };
-
-  const markSelectedAsOnTheWay = async () => {
-    if (!selectedOrderIds.size) return;
-    const updates = Array.from(selectedOrderIds).map((id) =>
-      base44.entities.Order.update(id, {
-        delivery_status: 'Saiu para Entrega',
-        status: 'Saiu para Entrega',
-      })
-    );
-    await Promise.all(updates);
-    await logAction('Entregas Marcadas como Saiu para Entrega', `Pedidos: ${Array.from(selectedOrderIds).join(', ')}`);
-    setSelectedOrderIds(new Set());
     if (user) await loadOrders(user);
   };
 
@@ -186,17 +237,6 @@ export default function Deliveries() {
         </div>
       ) : (
         <div className="space-y-4">
-          {selectedOrderIds.size > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div>
-                <p className="text-sm font-medium text-slate-900">{selectedOrderIds.size} entrega(s) selecionada(s)</p>
-                <p className="text-sm text-slate-500">Marque como Saiu para Entrega quando a rota estiver definida.</p>
-              </div>
-              <Button onClick={markSelectedAsOnTheWay} className="bg-purple-600 hover:bg-purple-700">
-                Marcar selecionados como Saiu para Entrega
-              </Button>
-            </div>
-          )}
           {orders.map(order => {
             const cfg = statusConfig[order.delivery_status] || statusConfig['Pendente'];
             const StatusIcon = cfg.icon;
@@ -208,12 +248,6 @@ export default function Deliveries() {
                 <div className="p-4 border-b border-slate-100">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <input
-                        type="checkbox"
-                        checked={selectedOrderIds.has(order.id)}
-                        onChange={() => toggleOrderSelection(order.id)}
-                        className="h-4 w-4 text-purple-600 rounded border-slate-300"
-                      />
                       <div className="min-w-0">
                         <p className="font-semibold text-slate-900 truncate">{order.restaurant_name}</p>
                         <p className="text-xs text-slate-500">{formatDate(order.created_date)} • {itemCount} itens • {formatBRL(order.total)}</p>
@@ -228,19 +262,33 @@ export default function Deliveries() {
 
                 <div className="p-4 space-y-3">
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto] items-end">
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        step="1"
-                        min="1"
-                        placeholder="Posição"
-                        value={sequenceByOrderId[order.id] || ''}
-                        onChange={(e) => updateSequenceValue(order.id, e.target.value)}
-                        className="max-w-[100px]"
-                      />
-                      <Button onClick={() => saveOrderSequence(order)} variant="outline" className="h-9">
-                        Salvar posição
-                      </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {orders.length === 1 ? (
+                        <span className="text-sm font-medium text-slate-600">Ordem de entrega: {order.delivery_sequence || 1}</span>
+                      ) : sequencePickerOpen === order.id ? (
+                        <>
+                          <select
+                            value={sequenceByOrderId[order.id] || ''}
+                            onChange={(e) => {
+                              updateSequenceValue(order.id, e.target.value);
+                              if (e.target.value) saveOrderSequence(order, e.target.value);
+                            }}
+                            className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-600 outline-none focus:ring-1 focus:ring-emerald-500"
+                          >
+                            <option value="">Selecione a posição</option>
+                            {getAvailableSequences(order).map(sequence => (
+                              <option key={sequence} value={sequence}>Posição {sequence}</option>
+                            ))}
+                          </select>
+                          <Button onClick={() => setSequencePickerOpen(null)} variant="ghost" className="h-9">
+                            Cancelar
+                          </Button>
+                        </>
+                      ) : (
+                        <Button onClick={() => setSequencePickerOpen(order.id)} variant="outline" className="h-9">
+                          {order.delivery_sequence ? `Posição ${order.delivery_sequence}` : 'Definir posição'}
+                        </Button>
+                      )}
                     </div>
                     {order.delivery_sequence != null && (
                       <span className="text-sm text-slate-500">Ordem atual: {order.delivery_sequence}</span>

@@ -98,6 +98,10 @@ export default function Orders() {
   // restauração falhar por qualquer motivo, nada é excluído e você vê o
   // erro de verdade. Ver delete_order_and_restore_stock em
   // supabase_migration_atomic_checkout.sql
+  //
+  // A função agora busca os itens do pedido DIRETO do banco (não confia
+  // mais no que a tela do navegador tinha em memória) — então não
+  // precisamos mais montar/resolver os itens aqui, só mandar o ID.
   const deletingRef = React.useRef(false);
   const confirmDelete = async () => {
     // Mesma proteção do checkout: trava síncrona, não depende de re-render.
@@ -110,31 +114,14 @@ export default function Orders() {
     setDeleting(true);
 
     const orderId = order.id;
-    const orderItems = Array.isArray(order.items) ? order.items : [];
+    const affectedProductIds = Array.isArray(order.items)
+      ? order.items.map(item => item.product_id).filter(Boolean)
+      : [];
     setOrders(prev => prev.filter(o => o.id !== orderId));
 
     try {
-      // Só busca a lista completa de produtos se algum item do pedido não
-      // tiver product_id salvo (pedidos antigos) — pedidos novos sempre têm
-      // product_id, então na maioria das vezes isso nem roda.
-      const needsNameLookup = orderItems.some(item => !item.product_id);
-      const productLookupByName = needsNameLookup
-        ? new Map((await base44.entities.Product.list().catch(() => []))
-            .map(product => [String(product.name || '').trim().toLowerCase(), product]))
-        : null;
-
-      const resolvedItems = orderItems.map((item) => {
-        let productId = item.product_id || null;
-        if (!productId && productLookupByName) {
-          const match = productLookupByName.get(String(item.product_name || '').trim().toLowerCase());
-          productId = match?.id || null;
-        }
-        return { ...item, product_id: productId };
-      });
-
       const { error: deleteError } = await supabase.rpc('delete_order_and_restore_stock', {
         p_order_id: orderId,
-        p_items: resolvedItems,
       });
 
       if (deleteError) {
@@ -145,10 +132,8 @@ export default function Orders() {
 
       // Recalcula o custo médio dos produtos afetados — não bloqueia nada,
       // é só um dado de exibição (não afeta a exatidão do estoque em si).
-      resolvedItems.forEach((item) => {
-        if (item.product_id) {
-          void base44.stock.refreshProductCost(item.product_id).catch(() => {});
-        }
+      affectedProductIds.forEach((productId) => {
+        void base44.stock.refreshProductCost(productId).catch(() => {});
       });
     } catch (error) {
       console.error('Erro ao excluir pedido e restaurar estoque:', error);

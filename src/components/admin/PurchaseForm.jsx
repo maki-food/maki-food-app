@@ -66,6 +66,22 @@ function unitCost(item) {
   return Number((cost / received).toFixed(2));
 }
 
+function calculateAutomaticSalePrice(product, newCost) {
+  const freight = parseFloat(product?.estimated_freight) || 0;
+  const margin = parseFloat(product?.profit_margin_pct) || 0;
+  const taxPct = parseFloat(product?.tax_pct) || 0;
+  const cardFee = parseFloat(product?.tax_fee_pct) || 0;
+  const percentTotal = margin + taxPct + cardFee;
+
+  if (percentTotal >= 100 || percentTotal < 0) return null;
+  const baseCost = newCost + freight;
+  const suggestedPrice = percentTotal === 0
+    ? baseCost
+    : baseCost / (1 - percentTotal / 100);
+
+  return Number(suggestedPrice.toFixed(2));
+}
+
 function aggregatePurchaseItems(items) {
   const grouped = new Map();
   for (const item of items) {
@@ -343,8 +359,29 @@ export default function PurchaseForm({ purchase, open, onClose, onSave }) {
         affectedProductIds.add(b.product_id);
       }));
 
-      await Promise.allSettled(Array.from(affectedProductIds).map(async (productId) => {
-        await base44.stock.refreshProductCost(productId).catch(() => {});
+      // Atualiza automaticamente somente quando o novo custo unitário é maior.
+      // O preço manual não é reduzido quando chega uma compra mais barata.
+      const newCostsByProduct = new Map();
+      for (const item of preparedItems) {
+        const newCost = unitCost(item);
+        const previousCost = newCostsByProduct.get(item.productId) || 0;
+        newCostsByProduct.set(item.productId, Math.max(previousCost, newCost));
+      }
+
+      await Promise.all(Array.from(newCostsByProduct.entries()).map(async ([productId, newCost]) => {
+        if (!Number.isFinite(newCost) || newCost <= 0) return;
+
+        const currentProduct = await base44.entities.Product.get(productId).catch(() => null);
+        if (!currentProduct) return;
+
+        const currentCost = Number(currentProduct.purchase_cost || 0);
+        if (newCost <= currentCost) return;
+
+        const automaticPrice = calculateAutomaticSalePrice(currentProduct, newCost);
+        const payload = { purchase_cost: newCost };
+        if (automaticPrice != null) payload.price = automaticPrice;
+
+        await base44.entities.Product.update(productId, payload);
       }));
 
       await logAction(purchase ? 'Compra Editada' : 'Compra Registrada', `Fornecedor: ${supplierName} - NF: ${invoiceNumber} - ${formatBRL(total)}`);

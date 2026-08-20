@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { base44 } from '@/api/supabaseClient';
+import { base44, supabase } from '@/api/supabaseClient';
 import { formatBRL, formatDate, printOrder, getOrderItemQuantityLabel, getOrderItemSubtotal, getOrderDisplayItems } from '@/lib/format';
 import { useSettings } from '@/context/SettingsContext';
 import StatusBadge from '@/components/StatusBadge';
@@ -273,11 +273,26 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
     const updates = {
       deliverer_id: delivererId || null,
       deliverer_name: delivererId ? (deliverer?.full_name || deliverer?.email || '') : '',
-      delivery_status: delivererId ? 'Pendente' : null,
-      status: delivererId ? 'Com Entregador' : 'Em Separação',
+      delivery_status: 'Pendente',
     };
     try {
       await base44.entities.Order.update(order.id, updates);
+      const assignmentChannel = supabase.channel('delivery-assignment-events');
+      await new Promise((resolve) => {
+        assignmentChannel.subscribe((status) => {
+          if (status === 'SUBSCRIBED' || ['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) resolve();
+        });
+      });
+      await assignmentChannel.send({
+        type: 'broadcast',
+        event: 'assignment_changed',
+        payload: {
+          orderId: order.id,
+          previousDelivererId: order.deliverer_id || null,
+          newDelivererId: delivererId || null,
+        },
+      });
+      void supabase.removeChannel(assignmentChannel);
       await logAction('Entregador Atribuído', `${order.restaurant_name}: ${deliverer?.full_name || deliverer?.email || 'Removido'}`);
       onUpdate?.();
     } catch (error) {

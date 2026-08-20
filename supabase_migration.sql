@@ -12,6 +12,10 @@ ADD COLUMN IF NOT EXISTS complement TEXT;
 ALTER TABLE public.products
 ADD COLUMN IF NOT EXISTS default_weight_kg numeric;
 
+-- Permissões individuais da equipe, armazenadas por usuário.
+ALTER TABLE public.profiles
+ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
+
 ALTER TABLE public.product_variants
 ADD COLUMN IF NOT EXISTS default_weight_kg numeric;
 
