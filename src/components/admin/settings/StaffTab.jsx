@@ -222,7 +222,7 @@ export default function StaffTab() {
       </Dialog>
 
       <Dialog open={!!editingUser} onOpenChange={(o) => !o && setEditingUser(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-w-6xl w-full max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar Funcionário</DialogTitle>
           </DialogHeader>
