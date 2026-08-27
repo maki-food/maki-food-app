@@ -67,6 +67,7 @@ const TABLES = {
   VariantType: 'variant_types',
   ProductVariant: 'product_variants',
   CashTransaction: 'cash_transactions',
+  PushSubscription: 'push_subscriptions',
 };
 
 function parseSort(sort) {
@@ -772,5 +773,15 @@ const cash = {
   },
 };
 
+const notifications = {
+  async sendDeliveryAssignment({ delivererId, restaurantName, invoiceNumber, total }) {
+    const { data, error } = await supabase.functions.invoke('send-delivery-notification', {
+      body: { delivererId, restaurantName, invoiceNumber, total },
+    });
+    if (error) throw error;
+    return data;
+  },
+};
+
 // Mantém o mesmo nome de export (`base44`) usado em todo o app
-export const base44 = { entities, auth, integrations, stock, cash };
+export const base44 = { entities, auth, integrations, stock, cash, notifications };

@@ -32,6 +32,29 @@ ALTER TABLE public.app_settings
 ADD COLUMN IF NOT EXISTS pickup_address TEXT,
 ADD COLUMN IF NOT EXISTS payment_fees JSONB NOT NULL DEFAULT '{}'::jsonb;
 
+CREATE TABLE IF NOT EXISTS public.push_subscriptions (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+	endpoint TEXT NOT NULL UNIQUE,
+	subscription JSONB NOT NULL,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS push_subscriptions_select ON public.push_subscriptions;
+CREATE POLICY push_subscriptions_select ON public.push_subscriptions
+FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS push_subscriptions_insert ON public.push_subscriptions;
+CREATE POLICY push_subscriptions_insert ON public.push_subscriptions
+FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS push_subscriptions_update ON public.push_subscriptions;
+CREATE POLICY push_subscriptions_update ON public.push_subscriptions
+FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS push_subscriptions_delete ON public.push_subscriptions;
+CREATE POLICY push_subscriptions_delete ON public.push_subscriptions
+FOR DELETE TO authenticated USING (user_id = auth.uid());
+
 ALTER TABLE public.cash_transactions
 ADD COLUMN IF NOT EXISTS gross_amount NUMERIC NOT NULL DEFAULT 0 CHECK (gross_amount >= 0),
 ADD COLUMN IF NOT EXISTS fee_amount NUMERIC NOT NULL DEFAULT 0 CHECK (fee_amount >= 0);

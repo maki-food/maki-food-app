@@ -5,7 +5,7 @@ import { formatBRL, formatDate, getOrderDisplayItems, getOrderItemQuantityLabel,
 import { logAction } from '@/lib/audit';
 import { toast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { MapPin, CreditCard, Phone, Package, Camera, Truck, CheckCircle, Clock, Bike, ExternalLink } from 'lucide-react';
+import { MapPin, CreditCard, Phone, Package, Camera, Truck, CheckCircle, Clock, Bike, Bell, ExternalLink } from 'lucide-react';
 
 export default function Deliveries() {
   const { settings } = useSettings();
@@ -17,6 +17,9 @@ export default function Deliveries() {
   const [sequenceByOrderId, setSequenceByOrderId] = useState({});
   const [sequencePickerOpen, setSequencePickerOpen] = useState(null);
   const [paymentDrafts, setPaymentDrafts] = useState({});
+  const [notificationPermission, setNotificationPermission] = useState(
+    typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
+  );
   const notifiedAssignmentsRef = useRef(new Set());
   const deliveryAudioRef = useRef(null);
 
@@ -30,6 +33,38 @@ export default function Deliveries() {
       if (playPromise) playPromise.catch(error => console.warn('Áudio de nova entrega bloqueado pelo navegador:', error));
     } catch (error) {
       console.warn('Não foi possível tocar o áudio de nova entrega:', error);
+    }
+  };
+
+  const enableNotifications = async () => {
+    if (typeof Notification === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      toast({ variant: 'destructive', title: 'Notificações não suportadas', description: 'Use uma versão atualizada do Chrome ou Safari.' });
+      return;
+    }
+    const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+    if (!vapidKey) {
+      toast({ variant: 'destructive', title: 'Notificações ainda não configuradas', description: 'Falta cadastrar a chave pública VAPID nas variáveis da Vercel.' });
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+    if (permission !== 'granted' || !user?.id) return;
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const applicationServerKey = Uint8Array.from(atob(vapidKey.replace(/-/g, '+').replace(/_/g, '/')), char => char.charCodeAt(0));
+      const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+      const subscriptionJson = subscription.toJSON();
+      const { error } = await supabase.from('push_subscriptions').upsert({
+        user_id: user.id,
+        endpoint: subscription.endpoint,
+        subscription: subscriptionJson,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'endpoint' });
+      if (error) throw error;
+      toast({ title: 'Notificações ativadas', description: 'Este celular receberá novas entregas.' });
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Não foi possível cadastrar este celular', description: error.message });
     }
   };
 
@@ -365,6 +400,13 @@ export default function Deliveries() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-900">Minhas Entregas</h1>
         <p className="text-sm text-slate-500">{orders.length} entrega(s) atribuída(s) a você</p>
+        {notificationPermission !== 'granted' && notificationPermission !== 'unsupported' && (
+          <Button type="button" onClick={enableNotifications} variant="outline" className="mt-3 border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+            <Bell className="w-4 h-4" /> Ativar notificações
+          </Button>
+        )}
+        {notificationPermission === 'granted' && <p className="mt-3 text-xs text-emerald-600">Notificações ativadas neste dispositivo.</p>}
+        {notificationPermission === 'denied' && <p className="mt-3 text-xs text-red-600">Notificações bloqueadas. Permita-as nas configurações do navegador.</p>}
       </div>
 
       {orders.length === 0 ? (

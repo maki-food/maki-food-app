@@ -365,6 +365,14 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
           newDelivererId: delivererId || null,
         },
       });
+      if (delivererId) {
+        void base44.notifications.sendDeliveryAssignment({
+          delivererId,
+          restaurantName: order.restaurant_name,
+          invoiceNumber: order.invoice_number,
+          total: order.total,
+        }).catch(error => console.warn('Não foi possível enviar push ao entregador:', error));
+      }
       void supabase.removeChannel(assignmentChannel);
       await logAction('Entregador Atribuído', `${order.restaurant_name}: ${deliverer?.full_name || deliverer?.email || 'Removido'}`);
       onUpdate?.();

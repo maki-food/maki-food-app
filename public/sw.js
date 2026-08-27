@@ -1,0 +1,30 @@
+self.addEventListener('push', event => {
+  const data = event.data?.json() || {};
+  const title = data.title || 'Nova entrega';
+  const options = {
+    body: data.body || 'Você recebeu uma nova entrega.',
+    icon: data.icon || '/favicon.png',
+    badge: data.badge || '/favicon.png',
+    data: { url: data.url || '/admin/entregas' },
+    tag: data.tag || 'delivery-assignment',
+    renotify: true,
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const url = event.notification.data?.url || '/admin/entregas';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+      const existingClient = windowClients.find(client => 'focus' in client);
+      if (existingClient) {
+        existingClient.navigate(url);
+        return existingClient.focus();
+      }
+      return clients.openWindow(url);
+    })
+  );
+});
