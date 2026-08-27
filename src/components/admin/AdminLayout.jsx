@@ -3,7 +3,7 @@ import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import { base44 } from '@/api/supabaseClient';
 import { useSettings } from '@/context/SettingsContext';
 import Sidebar from './Sidebar';
-import { Menu, X, LogOut } from 'lucide-react';
+import { Menu, LogOut } from 'lucide-react';
 import { hasPermission } from '@/lib/permissions';
 
 const adminRoles = ['admin', 'seller', 'deliverer'];
@@ -53,6 +53,7 @@ export default function AdminLayout() {
     '/admin/pedidos': 'orders',
     '/admin/entregas': 'deliveries',
     '/admin/configuracoes': 'settings',
+    '/admin/caixa': 'cash_flow',
   };
   const requiredPermission = routePermissions[location.pathname];
 

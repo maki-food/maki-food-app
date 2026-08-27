@@ -51,6 +51,7 @@ export default function Purchases() {
       }
       
       await base44.entities.Purchase.delete(purchase.id);
+      await base44.cash.removeReference('purchase', purchase.id);
       
       for (const productId of affectedProductIds) {
         await base44.stock.refreshProductCost(productId).catch(() => {});

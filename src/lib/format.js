@@ -60,6 +60,8 @@ export const getOrderDisplayItems = (order) => {
 
 export const printOrder = (order, settings = {}) => {
   const displayItems = getOrderDisplayItems(order);
+  const isPickupOrder = order.delivery_type === 'pickup'
+    || (settings.pickup_address && order.delivery_address === settings.pickup_address);
   const itemsHTML = displayItems.map(item => {
     const quantityText = getOrderItemQuantityLabel(item);
     const raw = formatBRL(getOrderItemSubtotal(item));
@@ -86,8 +88,9 @@ export const printOrder = (order, settings = {}) => {
       </div>
       <table style="width:100%;font-size:12px;margin-bottom:8px;border-collapse:collapse;">
         <tr><td style="width:120px;padding:1px 2px 1px 0;font-weight:600;color:#444;vertical-align:top">Restaurante:</td><td style="padding:1px 0;color:#222">${order.restaurant_name}</td></tr>
+        <tr><td style="padding:1px 2px 1px 0;font-weight:600;color:#444;vertical-align:top">Nota fiscal:</td><td style="padding:1px 0;color:#222">${order.invoice_number || '-'}</td></tr>
         <tr><td style="padding:1px 2px 1px 0;font-weight:600;color:#444;vertical-align:top">Data:</td><td style="padding:1px 0;color:#222">${formatDate(order.created_date)}</td></tr>
-        <tr><td style="padding:1px 2px 1px 0;font-weight:600;color:#444;vertical-align:top">Endereço:</td><td style="padding:1px 0;color:#222">${order.delivery_address}</td></tr>
+        <tr><td style="padding:1px 2px 1px 0;font-weight:600;color:#444;vertical-align:top">${isPickupOrder ? 'Atendimento:' : 'Endereço:'}</td><td style="padding:1px 0;color:#222">${isPickupOrder ? 'RETIRADA EM LOJA' : order.delivery_address}</td></tr>
         <tr><td style="padding:1px 2px 1px 0;font-weight:600;color:#444;vertical-align:top">Pagamento:</td><td style="padding:1px 0;color:#222">${order.payment_method}</td></tr>
         <tr><td style="padding:1px 2px 1px 0;font-weight:600;color:#444;vertical-align:top">Contato:</td><td style="padding:1px 0;color:#222">${order.contact_info || '-'}</td></tr>
         <tr><td style="padding:1px 2px 1px 0;font-weight:600;color:#444;vertical-align:top">Observações:</td><td style="padding:1px 0;color:#222;white-space:pre-wrap">${order.observations || '-'}</td></tr>

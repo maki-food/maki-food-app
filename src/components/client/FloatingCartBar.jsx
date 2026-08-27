@@ -11,11 +11,12 @@ export default function FloatingCartBar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  if (count === 0 || location.pathname === '/loja/carrinho' || location.pathname === '/loja/conta') return null;
+  const hiddenRoutes = ['/loja/carrinho', '/loja/finalizar-pedido', '/loja/conta'];
+  if (count === 0 || hiddenRoutes.includes(location.pathname)) return null;
 
   return (
     <div
-      className="fixed left-4 right-4 z-40 max-w-7xl mx-auto sm:left-6 sm:right-6"
+      className="floating-cart-bar fixed left-4 right-4 z-40 max-w-7xl mx-auto sm:left-6 sm:right-6"
       style={{ bottom: 'calc(64px + env(safe-area-inset-bottom) + 12px)' }}
     >
       <button

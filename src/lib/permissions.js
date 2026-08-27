@@ -14,6 +14,7 @@ export const permissionGroups = [
   { key: 'orders', label: 'Pedidos' },
   { key: 'deliveries', label: 'Entregas' },
   { key: 'settings', label: 'Configurações' },
+  { key: 'cash_flow', label: 'Fluxo de Caixa' },
 ];
 
 const staffDefaults = permissionGroups.reduce((permissions, item) => {

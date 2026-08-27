@@ -1,12 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { base44, supabase } from '@/api/supabaseClient';
+import { useSettings } from '@/context/SettingsContext';
 import { formatBRL, formatDate, getOrderDisplayItems, getOrderItemQuantityLabel, getOrderItemSubtotal } from '@/lib/format';
 import { logAction } from '@/lib/audit';
+import { toast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Loader2, MapPin, CreditCard, Phone, Package, Camera, Truck, CheckCircle, Clock, Bike, ExternalLink } from 'lucide-react';
+import { MapPin, CreditCard, Phone, Package, Camera, Truck, CheckCircle, Clock, Bike, ExternalLink } from 'lucide-react';
 
 export default function Deliveries() {
+  const { settings } = useSettings();
   const [orders, setOrders] = useState([]);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -14,6 +16,22 @@ export default function Deliveries() {
   const [completedOrders, setCompletedOrders] = useState([]);
   const [sequenceByOrderId, setSequenceByOrderId] = useState({});
   const [sequencePickerOpen, setSequencePickerOpen] = useState(null);
+  const [paymentDrafts, setPaymentDrafts] = useState({});
+  const notifiedAssignmentsRef = useRef(new Set());
+  const deliveryAudioRef = useRef(null);
+
+  const playAssignmentAlert = () => {
+    try {
+      const audio = deliveryAudioRef.current || new Audio('/toque-entregador.mp3');
+      deliveryAudioRef.current = audio;
+      audio.currentTime = 0;
+      audio.volume = 0.8;
+      const playPromise = audio.play();
+      if (playPromise) playPromise.catch(error => console.warn('Áudio de nova entrega bloqueado pelo navegador:', error));
+    } catch (error) {
+      console.warn('Não foi possível tocar o áudio de nova entrega:', error);
+    }
+  };
 
   const loadOrders = async (currentUser) => {
     if (!currentUser) return;
@@ -29,6 +47,13 @@ export default function Deliveries() {
       setOrders(active);
       setCompletedOrders(mine.filter(o => o.status === 'Finalizado' && isToday(o.delivery_completed_at || o.updated_date || o.created_date)));
       setSequenceByOrderId(Object.fromEntries(active.map(o => [o.id, o.delivery_sequence != null ? String(o.delivery_sequence) : ''])));
+      setPaymentDrafts(Object.fromEntries(active.map(o => [o.id, {
+        mode: o.payment_method_2 ? 'multi' : 'single',
+        method1: o.payment_method || 'Dinheiro',
+        method2: o.payment_method_2 || '',
+        amount1: String(o.payment_amount_1 ?? o.total ?? ''),
+        amount2: String(o.payment_amount_2 ?? ''),
+      }])));
     } catch (fetchError) {
       console.error('Erro ao carregar entregas:', fetchError);
       setOrders([]);
@@ -51,6 +76,21 @@ export default function Deliveries() {
     let unsub;
     let assignmentChannel;
     let active = true;
+    deliveryAudioRef.current = new Audio('/toque-entregador.mp3');
+    deliveryAudioRef.current.preload = 'auto';
+
+    const unlockAudio = () => {
+      if (!deliveryAudioRef.current) return;
+      deliveryAudioRef.current.muted = true;
+      const unlockPromise = deliveryAudioRef.current.play();
+      if (unlockPromise) unlockPromise.then(() => {
+        deliveryAudioRef.current.pause();
+        deliveryAudioRef.current.currentTime = 0;
+        deliveryAudioRef.current.muted = false;
+      }).catch(() => {});
+    };
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
 
     const init = async () => {
       try {
@@ -70,6 +110,17 @@ export default function Deliveries() {
             const previousOrder = event.previousData;
             const wasAssignedToCurrentUser = previousOrder?.deliverer_id === u.id;
             const isAssignedToCurrentUser = updatedOrder?.deliverer_id === u.id;
+
+            if (!wasAssignedToCurrentUser && isAssignedToCurrentUser && updatedOrder.status !== 'Finalizado' && !notifiedAssignmentsRef.current.has(updatedOrder.id)) {
+              notifiedAssignmentsRef.current.add(updatedOrder.id);
+              playAssignmentAlert();
+              toast({
+                title: 'Nova entrega atribuída!',
+                description: 'Você recebeu uma nova entrega para realizar.',
+                duration: 5000,
+                className: 'border-green-700 bg-green-600 text-white',
+              });
+            }
 
             if (!isAssignedToCurrentUser || updatedOrder.status === 'Finalizado') {
               setOrders(prev => prev.filter(order => order.id !== updatedOrder.id));
@@ -112,6 +163,16 @@ export default function Deliveries() {
               return;
             }
             if (payload.newDelivererId === u.id) {
+              if (!notifiedAssignmentsRef.current.has(payload.orderId)) {
+                notifiedAssignmentsRef.current.add(payload.orderId);
+                playAssignmentAlert();
+                toast({
+                  title: 'Nova entrega atribuída!',
+                  description: 'Você recebeu uma nova entrega para realizar.',
+                  duration: 5000,
+                  className: 'border-green-700 bg-green-600 text-white',
+                });
+              }
               loadOrders(u);
             }
           })
@@ -127,12 +188,35 @@ export default function Deliveries() {
     init();
     return () => {
       active = false;
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
       if (unsub) unsub();
       if (assignmentChannel) void supabase.removeChannel(assignmentChannel);
+      if (deliveryAudioRef.current) {
+        deliveryAudioRef.current.pause();
+        deliveryAudioRef.current = null;
+      }
     };
   }, []);
 
   const updateDeliveryStatus = async (order, newStatus) => {
+    const payment = paymentDrafts[order.id] || {};
+    const isMultiPayment = payment.mode === 'multi';
+    const orderTotal = Number(order.total || 0);
+    const paymentAmount1 = isMultiPayment ? Number(payment.amount1 || 0) : orderTotal;
+    const paymentAmount2 = isMultiPayment ? Number(payment.amount2 || 0) : 0;
+
+    if (newStatus === 'Finalizado' && (
+      !payment.method1
+      || (isMultiPayment && (!payment.method2 || payment.method1 === payment.method2
+        || payment.amount1 === '' || payment.amount2 === ''
+        || paymentAmount1 < 0 || paymentAmount2 < 0
+        || Math.abs(paymentAmount1 + paymentAmount2 - orderTotal) > 0.01))
+    )) {
+      alert('Escolha as formas e informe valores que somem exatamente o total do pedido antes de finalizar.');
+      return;
+    }
+
     const updates = { delivery_status: newStatus };
     if (newStatus === 'Aceito') {
       updates.status = 'Com Entregador';
@@ -146,7 +230,32 @@ export default function Deliveries() {
       updates.status = 'Finalizado';
       updates.delivery_completed_at = new Date().toISOString();
     }
-    await base44.entities.Order.update(order.id, updates);
+    const paymentMethod2 = isMultiPayment ? (payment.method2 || null) : null;
+    if (newStatus === 'Finalizado') {
+      try {
+        await base44.cash.syncSale({
+          orderId: order.id,
+          restaurantName: order.restaurant_name,
+          invoiceNumber: order.invoice_number,
+          total: order.total,
+          paymentMethod: payment.method1 || order.payment_method,
+          paymentMethod2,
+          paymentAmount1,
+          paymentAmount2,
+          paymentFees: settings?.payment_fees,
+          occurredAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        alert(`Não foi possível registrar a venda no fluxo de caixa: ${error.message}`);
+        return;
+      }
+    }
+    try {
+      await base44.entities.Order.update(order.id, updates);
+    } catch (error) {
+      if (newStatus === 'Finalizado') await base44.cash.removeReference('order', order.id).catch(() => {});
+      throw error;
+    }
 
     if (newStatus === 'Finalizado' && order.delivery_sequence != null && order.deliverer_id) {
       const sequence = Number(order.delivery_sequence);
@@ -169,6 +278,35 @@ export default function Deliveries() {
     }
 
     await logAction('Entrega Atualizada', `${order.restaurant_name}: ${newStatus}`);
+    if (user) await loadOrders(user);
+  };
+
+  const updatePaymentDraft = (order, changes) => {
+    setPaymentDrafts(prev => ({ ...prev, [order.id]: { ...(prev[order.id] || {}), ...changes } }));
+  };
+
+  const updateFirstPaymentAmount = (order, value) => {
+    const total = Number(order.total || 0);
+    const first = Number(value);
+    const remaining = value === '' || !Number.isFinite(first) ? '' : Math.max(0, total - first).toFixed(2);
+    updatePaymentDraft(order, { amount1: value, amount2: remaining });
+  };
+
+  const saveDeliveryPayment = async (order) => {
+    const payment = paymentDrafts[order.id] || {};
+    const isMulti = payment.mode === 'multi';
+    const first = isMulti ? Number(payment.amount1 || 0) : Number(order.total || 0);
+    const second = isMulti ? Number(payment.amount2 || 0) : 0;
+    if (!payment.method1 || (isMulti && (!payment.amount1 || !payment.amount2 || payment.method1 === payment.method2 || Math.abs(first + second - Number(order.total || 0)) > 0.01))) {
+      alert('Escolha formas diferentes e informe valores que somem exatamente o total do pedido.');
+      return;
+    }
+    await base44.entities.Order.update(order.id, {
+      payment_method: payment.method1,
+      payment_method_2: payment.method2 || null,
+      payment_amount_1: first,
+      payment_amount_2: isMulti ? second : null,
+    });
     if (user) await loadOrders(user);
   };
 
@@ -240,6 +378,7 @@ export default function Deliveries() {
           {orders.map(order => {
             const cfg = statusConfig[order.delivery_status] || statusConfig['Pendente'];
             const StatusIcon = cfg.icon;
+            const payment = paymentDrafts[order.id] || { mode: order.payment_method_2 ? 'multi' : 'single', method1: order.payment_method || 'Dinheiro', method2: order.payment_method_2 || '', amount1: String(order.total || ''), amount2: '' };
             const itemCount = (order.items || []).reduce((s, i) => s + i.quantity, 0);
             const canFinalize = order.delivery_photo_url && order.delivery_status === 'Saiu para Entrega';
 
@@ -315,7 +454,7 @@ export default function Deliveries() {
                     </div>
                     <div className="flex items-center gap-2 text-slate-600">
                       <CreditCard className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                      <span>{order.payment_method}</span>
+                      <div className="w-full"><span className="text-xs text-slate-400">Forma de pagamento</span><select value={payment.mode === 'multi' ? 'multi' : payment.method1} onChange={e => { const value = e.target.value; if (value === 'multi') updatePaymentDraft(order, { mode: 'multi', method1: '', method2: '', amount1: '', amount2: '' }); else updatePaymentDraft(order, { mode: 'single', method1: value, method2: '', amount1: String(order.total || ''), amount2: '' }); }} className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm"><option>Dinheiro</option><option>Pix</option><option>Cartão débito</option><option>Cartão crédito</option><option value="multi">2 formas de pagamento</option></select>{payment.mode === 'multi' && <div className="mt-2 space-y-2"><div className="grid grid-cols-2 gap-2"><select value={payment.method1} onChange={e => updatePaymentDraft(order, { method1: e.target.value })} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm"><option value="">Escolha uma forma</option><option>Dinheiro</option><option>Pix</option><option>Cartão débito</option><option>Cartão crédito</option></select><select value={payment.method2} onChange={e => updatePaymentDraft(order, { method2: e.target.value })} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm"><option value="">Escolha outra forma</option><option>Dinheiro</option><option>Pix</option><option>Cartão débito</option><option>Cartão crédito</option></select></div><div className="grid grid-cols-2 gap-2"><input type="number" min="0" step="0.01" value={payment.amount1} onChange={e => updateFirstPaymentAmount(order, e.target.value)} placeholder="Valor 1" className="h-9 rounded-md border border-slate-200 px-2 text-sm" /><input type="number" min="0" step="0.01" value={payment.amount2} onChange={e => updatePaymentDraft(order, { amount2: e.target.value })} placeholder="Valor 2" className="h-9 rounded-md border border-slate-200 px-2 text-sm" /></div></div>}<Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => saveDeliveryPayment(order)}>Salvar pagamento</Button></div>
                     </div>
                   </div>
 

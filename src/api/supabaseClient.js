@@ -66,6 +66,7 @@ const TABLES = {
   ListItem: 'list_items',
   VariantType: 'variant_types',
   ProductVariant: 'product_variants',
+  CashTransaction: 'cash_transactions',
 };
 
 function parseSort(sort) {
@@ -701,5 +702,75 @@ const stock = {
   },
 };
 
+const cash = {
+  async syncPurchase({ purchaseId, supplierName, invoiceNumber, date, total, paymentMethod, cashAmount, pixAmount, cardAmount }) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const payload = {
+      type: 'expense',
+      category: 'Compra de fornecedor',
+      description: `Compra ${invoiceNumber || ''} - ${supplierName || 'Fornecedor'}`.trim(),
+      amount: Number(total || 0),
+      payment_method: paymentMethod,
+      cash_amount: Number(cashAmount || 0),
+      digital_amount: Number(pixAmount || 0) + Number(cardAmount || 0),
+      reference_type: 'purchase',
+      reference_id: purchaseId,
+      occurred_at: date ? `${date}T12:00:00` : new Date().toISOString(),
+      created_by_id: user?.id || null,
+    };
+    const { error } = await supabase.from('cash_transactions').upsert(payload, { onConflict: 'reference_type,reference_id' });
+    throwIfError(error);
+  },
+
+  async syncSale({ orderId, restaurantName, invoiceNumber, total, paymentMethod, paymentMethod2, paymentAmount1, paymentAmount2, paymentFees, occurredAt }) {
+    const amount = Number(total || 0);
+    const firstAmount = paymentMethod2 ? Number(paymentAmount1 || 0) : amount;
+    const secondAmount = paymentMethod2 ? Number(paymentAmount2 || 0) : 0;
+    const methods = [[paymentMethod || 'Dinheiro', firstAmount], [paymentMethod2, secondAmount]].filter(([, value]) => value > 0);
+    if (Math.abs(firstAmount + secondAmount - amount) > 0.01) {
+      throw new Error('Os valores das formas de pagamento precisam somar exatamente o total do pedido.');
+    }
+    const isDigital = (method) => {
+      const normalized = String(method || '').trim().toLocaleLowerCase('pt-BR');
+      return normalized === 'pix' || normalized.includes('cartão') || normalized.includes('cartao');
+    };
+    const cashAmount = methods.reduce((sum, [method, value]) => sum + (isDigital(method) ? 0 : value), 0);
+    const digitalAmount = methods.reduce((sum, [method, value]) => sum + (isDigital(method) ? value : 0), 0);
+    const getFeeRate = (method) => {
+      const key = Object.keys(paymentFees || {}).find(item => item.toLocaleLowerCase('pt-BR') === String(method || '').toLocaleLowerCase('pt-BR'));
+      return Math.max(0, Number(key ? paymentFees[key] : 0) || 0);
+    };
+    const feeAmount = methods.reduce((sum, [method, value]) => sum + (value * getFeeRate(method) / 100), 0);
+    const digitalFee = methods.reduce((sum, [method, value]) => sum + (isDigital(method) ? value * getFeeRate(method) / 100 : 0), 0);
+    const { data: { user } } = await supabase.auth.getUser();
+    const paymentLabel = methods.map(([method]) => method).join(' + ');
+    const { error } = await supabase.from('cash_transactions').upsert({
+      type: 'entry',
+      category: 'Venda',
+      description: `Pedido ${invoiceNumber || ''} - ${restaurantName || 'Cliente'}`.trim(),
+      amount: Math.max(0, amount - feeAmount),
+      payment_method: paymentLabel || 'Dinheiro',
+      cash_amount: Math.max(0, cashAmount),
+      digital_amount: Math.max(0, digitalAmount - digitalFee),
+      gross_amount: amount,
+      fee_amount: feeAmount,
+      reference_type: 'order',
+      reference_id: orderId,
+      occurred_at: occurredAt || new Date().toISOString(),
+      created_by_id: user?.id || null,
+    }, { onConflict: 'reference_type,reference_id' });
+    throwIfError(error);
+  },
+
+  async removeReference(referenceType, referenceId) {
+    if (!referenceType || !referenceId) return;
+    const { error } = await supabase.from('cash_transactions')
+      .delete()
+      .eq('reference_type', referenceType)
+      .eq('reference_id', referenceId);
+    throwIfError(error);
+  },
+};
+
 // Mantém o mesmo nome de export (`base44`) usado em todo o app
-export const base44 = { entities, auth, integrations, stock };
+export const base44 = { entities, auth, integrations, stock, cash };

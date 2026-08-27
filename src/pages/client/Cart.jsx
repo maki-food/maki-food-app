@@ -3,7 +3,6 @@ import { base44, supabase } from '@/api/supabaseClient';
 import { useCart } from '@/context/CartContext';
 import { useSettings } from '@/context/SettingsContext';
 import { formatBRL } from '@/lib/format';
-import { maskPhone, maskCNPJ, maskCEP } from '@/lib/masks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,7 +35,7 @@ export default function Cart() {
     restaurant_name: '', cnpj: '', contact_number: '',
     street: '', number: '', complement: '', neighborhood: '', city: '', state: '', zip_code: '',
   });
-  const [checkoutForm, setCheckoutForm] = useState({ delivery_address: '', payment_method: '', observations: '' });
+  const [checkoutForm, setCheckoutForm] = useState({ delivery_address: '', delivery_type: 'delivery', payment_method: '', observations: '' });
   const [addresses, setAddresses] = useState([]);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -50,7 +49,8 @@ export default function Cart() {
   const isCheckoutPage = location.pathname === '/loja/finalizar-pedido';
   const isCartPage = location.pathname === '/loja/carrinho';
 
-  const shippingFee = total >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
+  const pickupAddress = settings?.pickup_address?.trim() || '';
+  const shippingFee = checkoutForm.delivery_type === 'pickup' ? 0 : (total >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE);
   const grandTotal = total + shippingFee;
   const freeShippingDifference = Math.max(0, FREE_SHIPPING_THRESHOLD - total);
   const showFreeShippingMessage = total < FREE_SHIPPING_THRESHOLD;
@@ -80,7 +80,9 @@ export default function Cart() {
       neighborhood: profile.neighborhood || '', city: profile.city || '', state: profile.state || '', zip_code: profile.zip_code || '',
     });
     const fullAddr = buildFullAddress(profile);
-    setCheckoutForm(prev => ({ ...prev, delivery_address: fullAddr }));
+    setCheckoutForm(prev => prev.delivery_type === 'pickup'
+      ? { ...prev, delivery_address: pickupAddress || fullAddr }
+      : { ...prev, delivery_address: fullAddr });
   };
 
   const checkUser = async () => {
@@ -130,9 +132,12 @@ export default function Cart() {
   };
 
   const generateInvoiceNumber = async () => {
-    const timestamp = Date.now().toString();
-    const randomSuffix = Math.floor(Math.random() * 900) + 100;
-    return `NF-${timestamp.slice(-8)}-${randomSuffix}`;
+    const { data, error } = await supabase.rpc('next_invoice_number');
+    if (error || !data) {
+      throw new Error('Não foi possível gerar o número do pedido. Execute a migration atualizada no Supabase.');
+    }
+    const number = String(data).replace(/^NF-/i, '');
+    return `NF-${number}`;
   };
 
   const submittingRef = React.useRef(false);
@@ -151,7 +156,7 @@ export default function Cart() {
     if (submittingRef.current) return;
     submittingRef.current = true;
 
-    if (!checkoutForm.delivery_address) {
+    if (!checkoutForm.delivery_address || (checkoutForm.delivery_type === 'pickup' && !pickupAddress)) {
       submittingRef.current = false;
       toast({
         variant: 'destructive',
@@ -238,6 +243,7 @@ export default function Cart() {
           invoice_number: invoiceNumber,
           status: 'Pedido Emitido',
           delivery_address: deliveryAddress,
+          delivery_type: checkoutForm.delivery_type,
           payment_method: checkoutForm.payment_method,
           contact_info: contactInfo,
           observations: checkoutForm.observations,
@@ -251,11 +257,23 @@ export default function Cart() {
         throw new Error(orderError.message || 'Não foi possível finalizar o pedido.');
       }
 
+      // A RPC antiga pode não conhecer a coluna nova; garante o tipo após a criação.
+      const createdOrderId = createdOrder?.id || createdOrder?.[0]?.id || (typeof createdOrder === 'string' ? createdOrder : null);
+      if (createdOrderId) {
+        const { error: deliveryTypeError } = await supabase
+          .from('orders')
+          .update({ delivery_type: checkoutForm.delivery_type })
+          .eq('id', createdOrderId);
+        if (deliveryTypeError) throw new Error(deliveryTypeError.message || 'Não foi possível salvar o tipo de atendimento.');
+      }
+
       void logAction('Pedido Criado', `${restaurant.restaurant_name} - ${formatBRL(grandTotal)} - Pedido #${createdOrder?.invoice_number || '-'}`);
 
       toast({
         title: 'Pedido enviado',
         description: 'Seu pedido foi registrado e está sendo processado.',
+        duration: 5000,
+        className: 'border-green-700 bg-green-600 text-white',
       });
 
       clearCart();
@@ -511,38 +529,38 @@ export default function Cart() {
                   <div>
                     <Label>
                       <MapPin className="w-3.5 h-3.5 inline mr-1" />
-                      Endereco de entrega *
+                      Como deseja receber? *
                     </Label>
-                    <Select value={checkoutForm.delivery_address} onValueChange={v => setCheckoutForm({ ...checkoutForm, delivery_address: v })}>
-                      <SelectTrigger className="mt-1 h-11 min-w-0">
-                        <SelectValue placeholder="Selecione o endereco" />
-                      </SelectTrigger>
-                      <SelectContent className="w-[min(92vw,420px)] max-w-[calc(100vw-2rem)]">
-                        <SelectItem
-                          value={getSavedAddress(restaurant)}
-                          textValue={`Endereco 1 - ${getAddressSummary(restaurant)}`}
-                          className="items-start py-3"
-                        >
-                          <span className="flex min-w-0 flex-col gap-0.5 pr-2">
-                            <span className="font-medium">Endereco 1 (principal)</span>
-                            <span className="line-clamp-2 text-xs font-normal text-slate-500">{getSavedAddress(restaurant)}</span>
-                          </span>
-                        </SelectItem>
-                        {addresses.map(a => (
-                          <SelectItem
-                            key={a.id}
-                            value={getSavedAddress(a)}
-                            textValue={`${a.label || 'Endereco 2'} - ${getAddressSummary(a)}`}
-                            className="items-start py-3"
-                          >
-                            <span className="flex min-w-0 flex-col gap-0.5 pr-2">
-                              <span className="font-medium">{a.label || 'Endereco 2'}</span>
-                              <span className="line-clamp-2 text-xs font-normal text-slate-500">{getSavedAddress(a)}</span>
-                            </span>
+                    <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <button type="button" onClick={() => setCheckoutForm({ ...checkoutForm, delivery_type: 'pickup', delivery_address: pickupAddress })} className={`rounded-lg border px-3 py-3 text-left text-sm transition-colors ${checkoutForm.delivery_type === 'pickup' ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
+                        <span className="block font-semibold">Retirar em loja</span>
+                        <span className="mt-1 block text-xs">Sem taxa de entrega</span>
+                      </button>
+                      <button type="button" onClick={() => setCheckoutForm({ ...checkoutForm, delivery_type: 'delivery', delivery_address: checkoutForm.delivery_type === 'pickup' ? getSavedAddress(restaurant) : checkoutForm.delivery_address })} className={`rounded-lg border px-3 py-3 text-left text-sm transition-colors ${checkoutForm.delivery_type !== 'pickup' ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
+                        <span className="block font-semibold">Entregar no endereço</span>
+                        <span className="mt-1 block text-xs">Escolha um endereço cadastrado</span>
+                      </button>
+                    </div>
+                    {checkoutForm.delivery_type === 'pickup' ? (
+                      <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                        <p className="font-semibold">RETIRADA NA LOJA</p>
+                        <p className="mt-0.5 text-xs text-emerald-700">{pickupAddress || 'Endereço de retirada ainda não cadastrado.'}</p>
+                      </div>
+                    ) : (
+                      <Select value={checkoutForm.delivery_address} onValueChange={v => setCheckoutForm({ ...checkoutForm, delivery_address: v, delivery_type: 'delivery' })}>
+                        <SelectTrigger className="mt-2 h-11 min-w-0">
+                          <SelectValue placeholder="Selecione o endereço" />
+                        </SelectTrigger>
+                        <SelectContent className="w-[min(92vw,420px)] max-w-[calc(100vw-2rem)]">
+                          <SelectItem value={getSavedAddress(restaurant)} textValue={`Endereço 1 - ${getAddressSummary(restaurant)}`} className="items-start py-3">
+                            <span className="flex min-w-0 flex-col gap-0.5 pr-2"><span className="font-medium">Endereço 1 (principal)</span><span className="line-clamp-2 text-xs font-normal text-slate-500">{getSavedAddress(restaurant)}</span></span>
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                          {addresses.map(a => <SelectItem key={a.id} value={getSavedAddress(a)} textValue={`${a.label || 'Endereço 2'} - ${getAddressSummary(a)}`} className="items-start py-3">
+                            <span className="flex min-w-0 flex-col gap-0.5 pr-2"><span className="font-medium">{a.label || 'Endereço 2'}</span><span className="line-clamp-2 text-xs font-normal text-slate-500">{getSavedAddress(a)}</span></span>
+                          </SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                   <div>
                     <Label>
@@ -574,7 +592,7 @@ export default function Cart() {
                       Para produtos vendidos por peso, o valor será ajustado à quantidade servida. O valor final será cobrado após a separação do seu pedido.
                     </p>
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-500 flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Frete</span>
+                      <span className="text-slate-500 flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> {checkoutForm.delivery_type === 'pickup' ? 'Retirada' : 'Frete'}</span>
                       <span className={shippingFee === 0 ? 'text-emerald-600 font-medium' : 'text-slate-600'}>
                         {shippingFee === 0 ? 'GRATIS' : formatBRL(shippingFee)}
                       </span>

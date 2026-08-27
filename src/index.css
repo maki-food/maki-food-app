@@ -1,3 +1,6 @@
+body.cart-overlay-open .floating-cart-bar {
+  display: none;
+}
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

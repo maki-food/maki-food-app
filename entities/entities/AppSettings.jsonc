@@ -102,6 +102,10 @@
     "free_shipping_threshold": {
       "type": "number",
       "default": 200
+    },
+    "pickup_address": {
+      "type": "string",
+      "description": "Endereco para retirada no estabelecimento"
     }
   },
   "required": [

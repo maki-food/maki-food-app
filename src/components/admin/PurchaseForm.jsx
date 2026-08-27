@@ -115,6 +115,9 @@ export default function PurchaseForm({ purchase, open, onClose, onSave }) {
   const [supplierName, setSupplierName] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentMethod, setPaymentMethod] = useState('Dinheiro');
+  const [cashAmount, setCashAmount] = useState('');
+  const [pixAmount, setPixAmount] = useState('');
   const [items, setItems] = useState([emptyItem()]);
   const [invoicePhotoUrl, setInvoicePhotoUrl] = useState('');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -134,6 +137,9 @@ export default function PurchaseForm({ purchase, open, onClose, onSave }) {
           setSupplierName(purchase.supplier_name || '');
           setInvoiceNumber(purchase.invoice_number || '');
           setDate(purchase.date || new Date().toISOString().split('T')[0]);
+          setPaymentMethod(purchase.payment_method || 'Dinheiro');
+          setCashAmount(purchase.cash_amount != null ? String(purchase.cash_amount) : '');
+          setPixAmount(purchase.pix_amount != null ? String(purchase.pix_amount) : '');
           setInvoicePhotoUrl(purchase.invoice_photo_url || '');
 
           const existingBatches = await base44.entities.ProductBatch.filter({ purchase_id: purchase.id }).catch(() => []);
@@ -157,6 +163,7 @@ export default function PurchaseForm({ purchase, open, onClose, onSave }) {
         } else {
           setSupplierName(''); setInvoiceNumber('');
           setDate(new Date().toISOString().split('T')[0]);
+          setPaymentMethod('Dinheiro'); setCashAmount(''); setPixAmount('');
           setInvoicePhotoUrl('');
           setItems([emptyItem()]);
         }
@@ -312,16 +319,26 @@ export default function PurchaseForm({ purchase, open, onClose, onSave }) {
         price: unitCost(i),
       }));
 
+      const normalizedTotal = Number(total.toFixed(2));
+      const normalizedCash = paymentMethod === 'Dinheiro' ? normalizedTotal : paymentMethod === 'Dinheiro e Pix' ? Number(parseFloat(cashAmount) || 0) : 0;
+      const normalizedPix = paymentMethod === 'Pix' ? normalizedTotal : paymentMethod === 'Dinheiro e Pix' ? Number(parseFloat(pixAmount) || 0) : 0;
+      const normalizedCard = paymentMethod === 'Cartão' ? normalizedTotal : 0;
+      if (paymentMethod === 'Dinheiro e Pix' && Math.abs(normalizedCash + normalizedPix - normalizedTotal) > 0.01) {
+        throw new Error('Os valores em dinheiro e Pix precisam somar exatamente o total da compra.');
+      }
+
       let purchaseId = purchase?.id;
       if (purchase) {
         await base44.entities.Purchase.update(purchase.id, {
           supplier_name: supplierName, invoice_number: invoiceNumber, date,
-          products: productData, total, invoice_photo_url: invoicePhotoUrl,
+          products: productData, total: normalizedTotal, invoice_photo_url: invoicePhotoUrl,
+          payment_method: paymentMethod, cash_amount: normalizedCash, pix_amount: normalizedPix, card_amount: normalizedCard,
         });
       } else {
         const created = await base44.entities.Purchase.create({
           supplier_name: supplierName, invoice_number: invoiceNumber, date,
-          products: productData, total, invoice_photo_url: invoicePhotoUrl,
+          products: productData, total: normalizedTotal, invoice_photo_url: invoicePhotoUrl,
+          payment_method: paymentMethod, cash_amount: normalizedCash, pix_amount: normalizedPix, card_amount: normalizedCard,
         });
         purchaseId = created.id;
       }
@@ -351,6 +368,18 @@ export default function PurchaseForm({ purchase, open, onClose, onSave }) {
         }
         affectedProductIds.add(productId);
       }));
+
+      await base44.cash.syncPurchase({
+        purchaseId,
+        supplierName,
+        invoiceNumber,
+        date,
+        total: normalizedTotal,
+        paymentMethod,
+        cashAmount: normalizedCash,
+        pixAmount: normalizedPix,
+        cardAmount: normalizedCard,
+      });
 
       await Promise.all(existingBatches.filter(b => !usedBatchIds.has(b.id)).map(async (b) => {
         // Quando um lote é deletado, o trigger SQL (recompute_product_stock) dispara
@@ -414,6 +443,30 @@ export default function PurchaseForm({ purchase, open, onClose, onSave }) {
               <Label>Data</Label>
               <DateInput value={date} onChange={v => setDate(v)} className="mt-1" />
             </div>
+          </div>
+          <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-3">
+            <Label>Forma de pagamento da compra</Label>
+            <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+              <SelectTrigger className="mt-1 bg-white"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+                <SelectItem value="Pix">Pix</SelectItem>
+                <SelectItem value="Cartão">Cartão</SelectItem>
+                <SelectItem value="Dinheiro e Pix">Dinheiro e Pix</SelectItem>
+              </SelectContent>
+            </Select>
+            {paymentMethod === 'Dinheiro e Pix' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Valor em dinheiro</Label>
+                  <Input type="number" step="0.01" min="0" value={cashAmount} onChange={e => setCashAmount(e.target.value)} className="mt-1 bg-white" placeholder="0,00" />
+                </div>
+                <div>
+                  <Label className="text-xs">Valor em Pix</Label>
+                  <Input type="number" step="0.01" min="0" value={pixAmount} onChange={e => setPixAmount(e.target.value)} className="mt-1 bg-white" placeholder="0,00" />
+                </div>
+              </div>
+            )}
           </div>
           <div>
             <Label>Foto da Nota Fiscal</Label>

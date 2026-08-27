@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { User, ClipboardList, UserCog, LogOut, HelpCircle, ShieldCheck, ChevronRight, MapPin, Loader2, Plus, Trash2, Package, Edit } from 'lucide-react';
+import { User, ClipboardList, UserCog, LogOut, HelpCircle, ShieldCheck, ChevronRight, MapPin, Loader2, Plus, Package, Edit } from 'lucide-react';
 import { formatBRL, formatDate, getOrderDisplayItems, getOrderItemQuantityLabel, getOrderItemSubtotal } from '@/lib/format';
 import { maskCNPJ, maskPhone } from '@/lib/masks';
 import StatusBadge from '@/components/StatusBadge';
@@ -673,7 +673,7 @@ export default function Account() {
                 </div>
                 <div>
                   <p className="text-slate-400 text-xs uppercase tracking-wide">Pagamento</p>
-                  <p className="text-slate-700">{order.payment_method || 'Não informado'}</p>
+                  <p className="text-slate-700">{order.payment_method_2 ? `${order.payment_method} + ${order.payment_method_2}` : (order.payment_method || 'Não informado')}</p>
                 </div>
               </div>
 

@@ -25,6 +25,7 @@ const filters = [
   { value: 'Em Separação', label: 'Em Separação' },
   { value: 'Com Entregador', label: 'Com Entregador' },
   { value: 'Saiu para Entrega', label: 'Saiu para Entrega' },
+  { value: 'Pronto para Retirada', label: 'Pronto para Retirada' },
   { value: 'Finalizado', label: 'Finalizado' },
 ];
 
@@ -127,6 +128,8 @@ export default function Orders() {
       if (deleteError) {
         throw new Error(deleteError.message || 'Não foi possível excluir o pedido e restaurar o estoque.');
       }
+
+      await base44.cash.removeReference('order', orderId);
 
       await logAction('Pedido Excluído', order.restaurant_name);
 

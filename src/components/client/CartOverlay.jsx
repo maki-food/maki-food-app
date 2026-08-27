@@ -1,9 +1,14 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Cart from '@/pages/client/Cart';
 
 export default function CartOverlay() {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    document.body.classList.add('cart-overlay-open');
+    return () => document.body.classList.remove('cart-overlay-open');
+  }, []);
 
   return (
     <div

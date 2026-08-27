@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { base44 } from '@/api/supabaseClient';
 import { useSettings } from '@/context/SettingsContext';
 import { hasPermission } from '@/lib/permissions';
-import { LayoutDashboard, Package, Boxes, ShoppingCart, ClipboardList, Settings, Fish, X, LogOut, Tag, Calculator, Bike, Flame, CalendarClock, Layers } from 'lucide-react';
+import { LayoutDashboard, Package, Boxes, ShoppingCart, ClipboardList, Settings, Fish, X, LogOut, Tag, Calculator, Bike, Flame, CalendarClock, Layers, Wallet } from 'lucide-react';
 
 const allMenuItems = [
   { label: 'Dashboard', path: '/admin', icon: LayoutDashboard, roles: ['admin', 'seller'] },
@@ -17,6 +17,7 @@ const allMenuItems = [
   { label: 'Validades', path: '/admin/validades', icon: CalendarClock, roles: ['admin', 'seller'], badge: 'expiration' },
   { label: 'Pedidos', path: '/admin/pedidos', icon: ClipboardList, roles: ['admin', 'seller'], badge: 'pending' },
   { label: 'Entregas', path: '/admin/entregas', icon: Bike, roles: ['deliverer'], badge: 'delivery' },
+  { label: 'Fluxo de Caixa', path: '/admin/caixa', icon: Wallet, roles: ['admin', 'seller'] },
   { label: 'Configurações', path: '/admin/configuracoes', icon: Settings, roles: ['admin'] },
 ];
 
@@ -32,6 +33,7 @@ export default function Sidebar({ open, onClose, user, userRole = 'admin' }) {
     '/admin/estoque': 'stock_view', '/admin/compras': 'purchases', '/admin/categorias': 'categories',
     '/admin/promocoes': 'promotions', '/admin/ficha-tecnica': 'recipe', '/admin/validades': 'expirations',
     '/admin/pedidos': 'orders', '/admin/entregas': 'deliveries', '/admin/configuracoes': 'settings',
+    '/admin/caixa': 'cash_flow',
   };
   const menuItems = allMenuItems.filter(item => item.roles.includes(userRole) && hasPermission(user, menuPermissions[item.path]));
 

@@ -27,6 +27,7 @@ import VariantTypes from '@/pages/admin/VariantTypes';
 import FichaTecnica from '@/pages/admin/FichaTecnica';
 import Expirations from '@/pages/admin/Expirations';
 import Deliveries from '@/pages/admin/Deliveries';
+import CashFlow from '@/pages/admin/CashFlow';
 import Promotions from '@/pages/admin/Promotions';
 import ClientProducts from '@/pages/client/ClientProducts';
 import Cart from '@/pages/client/Cart';
@@ -40,9 +41,12 @@ import { CartProvider } from '@/context/CartContext';
 import { SettingsProvider } from '@/context/SettingsContext';
 
 function GlobalOrderRealtimeAlerts() {
+  const { user } = useAuth();
   const notifiedOrderIdsRef = useRef([]);
 
   useEffect(() => {
+    if (user?.role !== 'admin') return undefined;
+
     const playOrderSound = () => {
       try {
         const audio = new Audio('/order-alert-makifood.mp3');
@@ -73,13 +77,15 @@ function GlobalOrderRealtimeAlerts() {
       toast({
         title: 'Novo Pedido!',
         description: `${order.restaurant_name || 'Cliente'} • ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(order.total || 0))}`,
+        duration: 5000,
+        className: 'border-green-700 bg-green-600 text-white',
       });
     });
 
     return () => {
       if (unsub) unsub();
     };
-  }, []);
+  }, [user?.role]);
 
   return null;
 }
@@ -123,6 +129,7 @@ const AuthenticatedApp = () => {
           <Route path="/admin/ficha-tecnica" element={<FichaTecnica />} />
           <Route path="/admin/validades" element={<Expirations />} />
           <Route path="/admin/entregas" element={<Deliveries />} />
+          <Route path="/admin/caixa" element={<CashFlow />} />
         </Route>
         <Route element={<ClientLayout />}>
           <Route path="/loja" element={<ClientProducts />} />

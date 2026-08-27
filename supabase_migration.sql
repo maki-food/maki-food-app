@@ -16,6 +16,123 @@ ADD COLUMN IF NOT EXISTS default_weight_kg numeric;
 ALTER TABLE public.profiles
 ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
 
+ALTER TABLE public.purchases
+ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'Dinheiro',
+ADD COLUMN IF NOT EXISTS cash_amount NUMERIC NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS pix_amount NUMERIC NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS card_amount NUMERIC NOT NULL DEFAULT 0;
+
+ALTER TABLE public.orders
+ADD COLUMN IF NOT EXISTS payment_method_2 TEXT,
+ADD COLUMN IF NOT EXISTS payment_amount_1 NUMERIC,
+ADD COLUMN IF NOT EXISTS payment_amount_2 NUMERIC,
+ADD COLUMN IF NOT EXISTS delivery_type TEXT NOT NULL DEFAULT 'delivery';
+
+ALTER TABLE public.app_settings
+ADD COLUMN IF NOT EXISTS pickup_address TEXT,
+ADD COLUMN IF NOT EXISTS payment_fees JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE public.cash_transactions
+ADD COLUMN IF NOT EXISTS gross_amount NUMERIC NOT NULL DEFAULT 0 CHECK (gross_amount >= 0),
+ADD COLUMN IF NOT EXISTS fee_amount NUMERIC NOT NULL DEFAULT 0 CHECK (fee_amount >= 0);
+
+CREATE SEQUENCE IF NOT EXISTS public.order_invoice_number_seq
+START WITH 1000
+INCREMENT BY 1
+MINVALUE 1000;
+
+CREATE OR REPLACE FUNCTION public.next_invoice_number()
+RETURNS TEXT
+LANGUAGE sql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+	SELECT nextval('public.order_invoice_number_seq')::TEXT;
+$$;
+
+REVOKE ALL ON FUNCTION public.next_invoice_number() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.next_invoice_number() TO authenticated;
+
+CREATE TABLE IF NOT EXISTS public.cash_transactions (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	type TEXT NOT NULL CHECK (type IN ('entry', 'expense')),
+	category TEXT NOT NULL,
+	description TEXT NOT NULL,
+	amount NUMERIC NOT NULL DEFAULT 0 CHECK (amount >= 0),
+	payment_method TEXT NOT NULL,
+	cash_amount NUMERIC NOT NULL DEFAULT 0 CHECK (cash_amount >= 0),
+	digital_amount NUMERIC NOT NULL DEFAULT 0 CHECK (digital_amount >= 0),
+	reference_type TEXT,
+	reference_id UUID,
+	occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	created_by_id UUID REFERENCES auth.users(id)
+);
+
+DROP INDEX IF EXISTS public.cash_transactions_reference_idx;
+CREATE UNIQUE INDEX cash_transactions_reference_idx
+ON public.cash_transactions(reference_type, reference_id);
+
+ALTER TABLE public.cash_transactions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.cash_transactions REPLICA IDENTITY FULL;
+
+-- A RLS da tabela financeira consulta o papel do usuario autenticado.
+-- SECURITY DEFINER permite consultar o perfil mesmo quando profiles tambem tem RLS.
+CREATE OR REPLACE FUNCTION public.cash_flow_is_staff()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+	SELECT EXISTS (
+		SELECT 1
+		FROM public.profiles
+		WHERE id = auth.uid()
+			AND role IN ('admin', 'seller')
+	);
+$$;
+
+REVOKE ALL ON FUNCTION public.cash_flow_is_staff() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cash_flow_is_staff() TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.cash_flow_can_write()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+	SELECT EXISTS (
+		SELECT 1
+		FROM public.profiles
+		WHERE id = auth.uid()
+			AND role IN ('admin', 'seller', 'deliverer')
+	);
+$$;
+
+REVOKE ALL ON FUNCTION public.cash_flow_can_write() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cash_flow_can_write() TO authenticated;
+
+DROP POLICY IF EXISTS cash_transactions_select ON public.cash_transactions;
+CREATE POLICY cash_transactions_select ON public.cash_transactions
+FOR SELECT TO authenticated USING (public.cash_flow_is_staff());
+
+DROP POLICY IF EXISTS cash_transactions_write ON public.cash_transactions;
+CREATE POLICY cash_transactions_write ON public.cash_transactions
+FOR INSERT TO authenticated WITH CHECK (public.cash_flow_can_write());
+
+DROP POLICY IF EXISTS cash_transactions_update ON public.cash_transactions;
+CREATE POLICY cash_transactions_update ON public.cash_transactions
+FOR UPDATE TO authenticated
+USING (public.cash_flow_can_write())
+WITH CHECK (public.cash_flow_can_write());
+
+DROP POLICY IF EXISTS cash_transactions_delete ON public.cash_transactions;
+CREATE POLICY cash_transactions_delete ON public.cash_transactions
+FOR DELETE TO authenticated USING (public.cash_flow_is_staff());
+
 ALTER TABLE public.product_variants
 ADD COLUMN IF NOT EXISTS default_weight_kg numeric;
 
@@ -45,6 +162,7 @@ CHECK (status IN (
 	'Em Separação',
 	'Com Entregador',
 	'Saiu para Entrega',
+	'Pronto para Retirada',
 	'Finalizado'
 ));
 
@@ -69,7 +187,7 @@ BEGIN
 		'orders', 'products', 'categories', 'promotions', 'purchases',
 		'restaurants', 'app_settings', 'profiles', 'addresses', 'lists',
 		'list_items', 'variant_types', 'product_variants', 'ficha_tecnica',
-		'inventory_write_offs', 'audit_logs'
+		'inventory_write_offs', 'audit_logs', 'cash_transactions'
 	] LOOP
 		IF NOT EXISTS (
 			SELECT 1

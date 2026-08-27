@@ -21,12 +21,18 @@
         "Em Separação",
         "Com Entregador",
         "Saiu para Entrega",
+        "Pronto para Retirada",
         "Finalizado"
       ],
       "default": "Pedido Emitido"
     },
     "delivery_address": {
       "type": "string"
+    },
+    "delivery_type": {
+      "type": "string",
+      "enum": ["delivery", "pickup"],
+      "default": "delivery"
     },
     "payment_method": {
       "type": "string"

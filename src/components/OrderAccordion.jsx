@@ -19,6 +19,11 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
   const [photoViewOpen, setPhotoViewOpen] = useState(false);
   const [products, setProducts] = useState([]);
   const [selectedDeliverer, setSelectedDeliverer] = useState(order.deliverer_id || 'none');
+  const [paymentMethod, setPaymentMethod] = useState(order.payment_method_2 ? '2 formas de pagamento' : (order.payment_method || 'Dinheiro'));
+  const [paymentMethod1, setPaymentMethod1] = useState(order.payment_method || 'Dinheiro');
+  const [paymentMethod2, setPaymentMethod2] = useState(order.payment_method_2 || '');
+  const [paymentAmount1, setPaymentAmount1] = useState(String(order.payment_amount_1 ?? order.total ?? ''));
+  const [paymentAmount2, setPaymentAmount2] = useState(String(order.payment_amount_2 ?? ''));
   const originalItemsRef = useRef((order.items || []).map(item => ({ ...item })));
 
   useEffect(() => {
@@ -27,6 +32,13 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
     originalItemsRef.current = nextItems;
   }, [order.items]);
   useEffect(() => { setSelectedDeliverer(order.deliverer_id || 'none'); }, [order.deliverer_id]);
+  useEffect(() => {
+    setPaymentMethod(order.payment_method_2 ? '2 formas de pagamento' : (order.payment_method || 'Dinheiro'));
+    setPaymentMethod1(order.payment_method || 'Dinheiro');
+    setPaymentMethod2(order.payment_method_2 || '');
+    setPaymentAmount1(String(order.payment_amount_1 ?? order.total ?? ''));
+    setPaymentAmount2(String(order.payment_amount_2 ?? ''));
+  }, [order.payment_method, order.payment_method_2, order.payment_amount_1, order.payment_amount_2, order.total]);
 
   useEffect(() => {
     base44.entities.User.list().then(users => {
@@ -118,6 +130,8 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
   };
 
   const { settings } = useSettings();
+  const isPickupOrder = order.delivery_type === 'pickup'
+    || (settings?.pickup_address && order.delivery_address === settings.pickup_address);
   const SHIPPING_FEE = settings?.shipping_fee ?? 0;
   const FREE_SHIPPING_THRESHOLD = settings?.free_shipping_threshold ?? 0;
   const getEffectiveShippingFee = (subtotal) => {
@@ -261,9 +275,68 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
           }),
     };
 
-    await base44.entities.Order.update(order.id, nextPayload);
+    if (status === 'Finalizado' && isPickupOrder) {
+      try {
+        await base44.cash.syncSale({
+          orderId: order.id,
+          restaurantName: order.restaurant_name,
+          invoiceNumber: order.invoice_number,
+          total: order.total,
+          paymentMethod: order.payment_method,
+          paymentMethod2: order.payment_method_2,
+          paymentAmount1: order.payment_amount_1,
+          paymentAmount2: order.payment_amount_2,
+          paymentFees: settings?.payment_fees,
+          occurredAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        toast({ variant: 'destructive', title: 'Retirada não lançada no caixa', description: error.message });
+        return;
+      }
+    }
+    try {
+      await base44.entities.Order.update(order.id, nextPayload);
+    } catch (error) {
+      if (status === 'Finalizado' && isPickupOrder) await base44.cash.removeReference('order', order.id).catch(() => {});
+      toast({ variant: 'destructive', title: 'Não foi possível atualizar o status', description: error.message });
+      return;
+    }
+    if (status !== 'Finalizado' && order.status === 'Finalizado') {
+      await base44.cash.removeReference('order', order.id);
+    }
     await logAction('Status do Pedido Alterado', `${order.restaurant_name}: ${order.status} → ${status}`);
     onUpdate?.();
+  };
+
+  const savePayment = async () => {
+    const total = Number(order.total || 0);
+    const isMulti = paymentMethod === '2 formas de pagamento';
+    const first = isMulti ? Number(paymentAmount1 || 0) : total;
+    const second = isMulti ? Number(paymentAmount2 || 0) : 0;
+    if (!paymentMethod || (isMulti && (!paymentMethod1 || !paymentMethod2 || paymentMethod1 === paymentMethod2 || !paymentAmount1 || !paymentAmount2 || Math.abs(first + second - total) > 0.01))) {
+      toast({ variant: 'destructive', title: 'Valores inválidos', description: 'As formas de pagamento precisam somar exatamente o total do pedido.' });
+      return;
+    }
+    try {
+      await base44.entities.Order.update(order.id, {
+        payment_method: isMulti ? paymentMethod1 : paymentMethod,
+        payment_method_2: isMulti ? paymentMethod2 : null,
+        payment_amount_1: first,
+        payment_amount_2: paymentMethod2 ? second : null,
+      });
+      toast({ title: 'Pagamento atualizado', description: 'A forma de pagamento do pedido foi alterada.' });
+      onUpdate?.();
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Erro ao atualizar pagamento', description: error.message });
+    }
+  };
+
+  const updateFirstPaymentAmount = (value) => {
+    const total = Number(order.total || 0);
+    const first = Number(value);
+    const remaining = value === '' || !Number.isFinite(first) ? '' : Math.max(0, total - first).toFixed(2);
+    setPaymentAmount1(value);
+    setPaymentAmount2(remaining);
   };
 
   const assignDeliverer = async (delivererId) => {
@@ -342,11 +415,11 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div className="flex items-start gap-2">
               <MapPin className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
-              <div><p className="text-slate-400 text-xs">Endereço de Entrega</p><p className="text-slate-700">{order.delivery_address}</p></div>
+              <div><p className="text-slate-400 text-xs">{isPickupOrder ? 'RETIRADA EM LOJA' : 'Endereço de Entrega'}</p><p className="text-slate-700">{isPickupOrder ? 'RETIRADA EM LOJA' : order.delivery_address}</p></div>
             </div>
             <div className="flex items-start gap-2">
               <CreditCard className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
-              <div><p className="text-slate-400 text-xs">Forma de Pagamento</p><p className="text-slate-700">{order.payment_method}</p></div>
+              <div className="w-full"><p className="text-slate-400 text-xs">Forma de Pagamento</p><select value={paymentMethod} onChange={e => { const value = e.target.value; setPaymentMethod(value); if (value === '2 formas de pagamento') { setPaymentMethod1(''); setPaymentMethod2(''); setPaymentAmount1(''); setPaymentAmount2(''); } else { setPaymentMethod1(value); setPaymentMethod2(''); } }} className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm"><option>Dinheiro</option><option>Pix</option><option>Cartão débito</option><option>Cartão crédito</option><option>2 formas de pagamento</option></select>{paymentMethod === '2 formas de pagamento' && <div className="mt-2 grid grid-cols-1 gap-2"><div className="grid grid-cols-2 gap-2"><select value={paymentMethod1} onChange={e => setPaymentMethod1(e.target.value)} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm"><option value="">Escolha a primeira forma</option><option>Dinheiro</option><option>Pix</option><option>Cartão débito</option><option>Cartão crédito</option></select><select value={paymentMethod2} onChange={e => setPaymentMethod2(e.target.value)} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm"><option value="">Escolha a segunda forma</option><option>Dinheiro</option><option>Pix</option><option>Cartão débito</option><option>Cartão crédito</option></select></div><div className="grid grid-cols-2 gap-2"><input type="number" min="0" step="0.01" value={paymentAmount1} onChange={e => updateFirstPaymentAmount(e.target.value)} placeholder="Valor 1" className="h-9 rounded-md border border-slate-200 px-2 text-sm" /><input type="number" min="0" step="0.01" value={paymentAmount2} onChange={e => setPaymentAmount2(e.target.value)} placeholder="Valor 2" className="h-9 rounded-md border border-slate-200 px-2 text-sm" /></div></div>}<Button type="button" size="sm" variant="outline" className="mt-2" onClick={savePayment}>Salvar pagamento</Button></div>
             </div>
             <div className="flex items-start gap-2">
               <Phone className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
@@ -496,6 +569,7 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
                 <SelectItem value="Em Separação">Em Separação</SelectItem>
                 <SelectItem value="Com Entregador">Com Entregador</SelectItem>
                 <SelectItem value="Saiu para Entrega">Saiu para Entrega</SelectItem>
+                {isPickupOrder && <SelectItem value="Pronto para Retirada">Pronto para Retirada</SelectItem>}
                 <SelectItem value="Finalizado">Finalizado</SelectItem>
               </SelectContent>
             </Select>

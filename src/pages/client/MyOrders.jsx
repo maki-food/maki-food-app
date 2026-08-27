@@ -89,13 +89,16 @@ export default function MyOrders() {
 
   const getDeliverySequenceMessage = (order) => {
     if (!order.delivery_sequence) return null;
+    const deliveryAccepted = ['Aceito', 'Saiu para Entrega', 'Finalizado'].includes(order.delivery_status)
+      || ['Saiu para Entrega', 'Finalizado'].includes(order.status);
+    if (!deliveryAccepted) return null;
     if (order.status === 'Saiu para Entrega') {
       return `Entrega em rota — sua ordem está na posição ${order.delivery_sequence} da sequência.`;
     }
-    if (order.status === 'Com Entregador' || order.delivery_status === 'Aceito') {
-      return `Ordem recebida pelo entregador — posição ${order.delivery_sequence} na sequência de entrega.`;
+    if (order.status === 'Finalizado') {
+      return `Entrega concluída — sua ordem estava na posição ${order.delivery_sequence} da sequência.`;
     }
-    return `Ordem definida na posição ${order.delivery_sequence} da rota de entrega.`;
+    return `Ordem recebida pelo entregador — posição ${order.delivery_sequence} na sequência de entrega.`;
   };
 
   const renderOrder = (order) => {
@@ -123,7 +126,7 @@ export default function MyOrders() {
           <div className="border-t border-slate-100 p-4 space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
               <div><p className="text-slate-400 text-xs">Endereço</p><p className="text-slate-700">{order.delivery_address}</p></div>
-              <div><p className="text-slate-400 text-xs">Pagamento</p><p className="text-slate-700">{order.payment_method}</p></div>
+              <div><p className="text-slate-400 text-xs">Pagamento</p><p className="text-slate-700">{order.payment_method_2 ? `${order.payment_method} + ${order.payment_method_2}` : order.payment_method}</p></div>
               {order.observations && <div className="sm:col-span-2"><p className="text-slate-400 text-xs">Observações</p><p className="text-slate-700">{order.observations}</p></div>}
             </div>
             <div className="rounded-lg border border-slate-100 overflow-hidden">
