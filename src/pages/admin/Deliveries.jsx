@@ -20,6 +20,7 @@ export default function Deliveries() {
   const [notificationPermission, setNotificationPermission] = useState(
     typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
   );
+  const [notificationEnabled, setNotificationEnabled] = useState(false);
   const notifiedAssignmentsRef = useRef(new Set());
   const deliveryAudioRef = useRef(null);
 
@@ -67,9 +68,34 @@ export default function Deliveries() {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'endpoint' });
       if (error) throw error;
+      setNotificationEnabled(true);
       toast({ title: 'Notificações ativadas', description: 'Este celular receberá novas entregas.' });
     } catch (error) {
       toast({ variant: 'destructive', title: 'Não foi possível cadastrar este celular', description: error.message });
+    }
+  };
+
+  const disableNotifications = async () => {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        const { error } = await supabase.from('push_subscriptions').delete().eq('endpoint', subscription.endpoint);
+        if (error) throw error;
+        await subscription.unsubscribe();
+      }
+      setNotificationEnabled(false);
+      toast({ title: 'Notificações desativadas' });
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Não foi possível desativar', description: error.message });
+    }
+  };
+
+  const toggleNotifications = () => {
+    if (notificationEnabled) {
+      void disableNotifications();
+    } else {
+      void enableNotifications();
     }
   };
 
@@ -138,6 +164,10 @@ export default function Deliveries() {
         if (!active) return;
         setUser(u);
         await loadOrders(u);
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          const registration = await navigator.serviceWorker.ready;
+          setNotificationEnabled(Boolean(await registration.pushManager.getSubscription()));
+        }
 
         unsub = base44.entities.Order.subscribe((event) => {
           if (!active) return;
@@ -405,13 +435,18 @@ export default function Deliveries() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-900">Minhas Entregas</h1>
         <p className="text-sm text-slate-500">{orders.length} entrega(s) atribuída(s) a você</p>
-        {notificationPermission !== 'granted' && notificationPermission !== 'unsupported' && (
-          <Button type="button" onClick={enableNotifications} variant="outline" className="mt-3 border-emerald-200 text-emerald-700 hover:bg-emerald-50">
-            <Bell className="w-4 h-4" /> Ativar notificações
+        {notificationPermission !== 'unsupported' && (
+          <Button
+            type="button"
+            onClick={toggleNotifications}
+            variant="outline"
+            aria-label={notificationEnabled ? 'Desativar notificações' : 'Ativar notificações'}
+            title={notificationEnabled ? 'Desativar notificações' : 'Ativar notificações'}
+            className={`mt-3 h-10 w-10 rounded-full p-0 ${notificationEnabled ? 'border-emerald-200 text-emerald-700 hover:bg-emerald-50' : 'border-red-200 text-red-600 hover:bg-red-50'}`}
+          >
+            <Bell className="h-4 w-4" />
           </Button>
         )}
-        {notificationPermission === 'granted' && <p className="mt-3 text-xs text-emerald-600">Notificações ativadas neste dispositivo.</p>}
-        {notificationPermission === 'denied' && <p className="mt-3 text-xs text-red-600">Notificações bloqueadas. Permita-as nas configurações do navegador.</p>}
       </div>
 
       {orders.length === 0 ? (

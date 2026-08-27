@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS public.push_subscriptions (
 	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.push_subscriptions TO authenticated;
+
 ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS push_subscriptions_select ON public.push_subscriptions;
 CREATE POLICY push_subscriptions_select ON public.push_subscriptions
