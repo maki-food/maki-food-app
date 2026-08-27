@@ -25,6 +25,10 @@ export default function Deliveries() {
   const deliveryAudioRef = useRef(null);
 
   const playAssignmentAlert = () => {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (isIOS) return;
+
     try {
       const audio = deliveryAudioRef.current || new Audio('/toque-entregador.mp3');
       deliveryAudioRef.current = audio;
