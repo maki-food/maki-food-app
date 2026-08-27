@@ -41,7 +41,8 @@ export default function Deliveries() {
       toast({ variant: 'destructive', title: 'Notificações não suportadas', description: 'Use uma versão atualizada do Chrome ou Safari.' });
       return;
     }
-    const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+    // A chave pública pode ficar no frontend; a privada permanece somente no Supabase.
+    const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BGQAPdL0BRSdzTuEWz5bBAXYGVyxv-aSW75rHywE_VTxLXRBQOBO_HHqf1eOE08Mx3MlBIKlLIH_hBaxPTBgBvk';
     if (!vapidKey) {
       toast({ variant: 'destructive', title: 'Notificações ainda não configuradas', description: 'Falta cadastrar a chave pública VAPID nas variáveis da Vercel.' });
       return;
@@ -52,7 +53,11 @@ export default function Deliveries() {
 
     try {
       const registration = await navigator.serviceWorker.ready;
-      const applicationServerKey = Uint8Array.from(atob(vapidKey.replace(/-/g, '+').replace(/_/g, '/')), char => char.charCodeAt(0));
+      const normalizedKey = vapidKey.replace(/-/g, '+').replace(/_/g, '/');
+      const paddedKey = normalizedKey.padEnd(normalizedKey.length + ((4 - normalizedKey.length % 4) % 4), '=');
+      const applicationServerKey = Uint8Array.from(atob(paddedKey), char => char.charCodeAt(0));
+      const existingSubscription = await registration.pushManager.getSubscription();
+      if (existingSubscription) await existingSubscription.unsubscribe();
       const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
       const subscriptionJson = subscription.toJSON();
       const { error } = await supabase.from('push_subscriptions').upsert({

@@ -8,6 +8,8 @@ self.addEventListener('push', event => {
     data: { url: data.url || '/admin/entregas' },
     tag: data.tag || 'delivery-assignment',
     renotify: true,
+    silent: false,
+    vibrate: [300, 100, 300, 100, 600],
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
