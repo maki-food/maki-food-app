@@ -101,6 +101,8 @@ ON public.cash_transactions(reference_type, reference_id);
 
 ALTER TABLE public.cash_transactions ENABLE ROW LEVEL SECURITY;
 
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.cash_transactions TO authenticated;
+
 ALTER TABLE public.cash_transactions REPLICA IDENTITY FULL;
 
 -- A RLS da tabela financeira consulta o papel do usuario autenticado.
@@ -134,7 +136,7 @@ AS $$
 		SELECT 1
 		FROM public.profiles
 		WHERE id = auth.uid()
-			AND role IN ('admin', 'seller', 'deliverer')
+			AND LOWER(TRIM(role)) IN ('admin', 'seller', 'vendedor', 'deliverer', 'entregador')
 	);
 $$;
 
@@ -147,7 +149,10 @@ FOR SELECT TO authenticated USING (public.cash_flow_is_staff());
 
 DROP POLICY IF EXISTS cash_transactions_write ON public.cash_transactions;
 CREATE POLICY cash_transactions_write ON public.cash_transactions
-FOR INSERT TO authenticated WITH CHECK (public.cash_flow_can_write());
+FOR INSERT TO authenticated WITH CHECK (
+	public.cash_flow_can_write()
+	AND COALESCE(reference_type, '') <> 'order'
+);
 
 DROP POLICY IF EXISTS cash_transactions_update ON public.cash_transactions;
 CREATE POLICY cash_transactions_update ON public.cash_transactions
@@ -158,6 +163,63 @@ WITH CHECK (public.cash_flow_can_write());
 DROP POLICY IF EXISTS cash_transactions_delete ON public.cash_transactions;
 CREATE POLICY cash_transactions_delete ON public.cash_transactions
 FOR DELETE TO authenticated USING (public.cash_flow_is_staff());
+
+-- Venda de pedido somente pode ser criada pela função abaixo, depois que o
+-- pedido já estiver finalizado. Isso impede lançamentos manuais no caixa.
+CREATE OR REPLACE FUNCTION public.register_completed_order_sale(
+	p_order_id UUID,
+	p_restaurant_name TEXT,
+	p_invoice_number TEXT,
+	p_amount NUMERIC,
+	p_payment_method TEXT,
+	p_cash_amount NUMERIC,
+	p_digital_amount NUMERIC,
+	p_gross_amount NUMERIC,
+	p_fee_amount NUMERIC,
+	p_occurred_at TIMESTAMPTZ
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+	IF NOT public.cash_flow_can_write() THEN
+		RAISE EXCEPTION 'Usuário sem permissão para registrar venda finalizada';
+	END IF;
+
+	IF NOT EXISTS (
+		SELECT 1 FROM public.orders
+		WHERE id = p_order_id AND status = 'Finalizado'
+	) THEN
+		RAISE EXCEPTION 'O pedido precisa estar finalizado antes de entrar no caixa';
+	END IF;
+
+	INSERT INTO public.cash_transactions (
+		type, category, description, amount, payment_method,
+		cash_amount, digital_amount, gross_amount, fee_amount,
+		reference_type, reference_id, occurred_at, created_by_id
+	) VALUES (
+		'entry', 'Venda',
+		format('Pedido %s - %s', NULLIF(p_invoice_number, ''), COALESCE(p_restaurant_name, 'Cliente')),
+		GREATEST(0, p_amount), COALESCE(p_payment_method, 'Dinheiro'),
+		GREATEST(0, p_cash_amount), GREATEST(0, p_digital_amount),
+		GREATEST(0, p_gross_amount), GREATEST(0, p_fee_amount),
+		'order', p_order_id, COALESCE(p_occurred_at, NOW()), auth.uid()
+	)
+	ON CONFLICT (reference_type, reference_id) DO UPDATE SET
+		amount = EXCLUDED.amount,
+		payment_method = EXCLUDED.payment_method,
+		cash_amount = EXCLUDED.cash_amount,
+		digital_amount = EXCLUDED.digital_amount,
+		gross_amount = EXCLUDED.gross_amount,
+		fee_amount = EXCLUDED.fee_amount,
+		occurred_at = EXCLUDED.occurred_at;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.register_completed_order_sale(UUID, TEXT, TEXT, NUMERIC, TEXT, NUMERIC, NUMERIC, NUMERIC, NUMERIC, TIMESTAMPTZ) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.register_completed_order_sale(UUID, TEXT, TEXT, NUMERIC, TEXT, NUMERIC, NUMERIC, NUMERIC, NUMERIC, TIMESTAMPTZ) TO authenticated;
 
 ALTER TABLE public.product_variants
 ADD COLUMN IF NOT EXISTS default_weight_kg numeric;

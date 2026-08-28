@@ -274,6 +274,7 @@ export default function Deliveries() {
   }, []);
 
   const updateDeliveryStatus = async (order, newStatus) => {
+    console.log('[FINALIZAR] updateDeliveryStatus chamado com newStatus =', newStatus);
     const payment = paymentDrafts[order.id] || {};
     const isMultiPayment = payment.mode === 'multi';
     const orderTotal = Number(order.total || 0);
@@ -305,7 +306,26 @@ export default function Deliveries() {
       updates.delivery_completed_at = new Date().toISOString();
     }
     const paymentMethod2 = isMultiPayment ? (payment.method2 || null) : null;
+
+    // ERA: cash.syncSale() rodava ANTES do Order.update() que marca o
+    // pedido como 'Finalizado'. A política de segurança da tabela
+    // cash_transactions só libera o registro quando o pedido JÁ está
+    // finalizado no banco — como a atualização ainda não tinha acontecido,
+    // a checagem falhava com 403 toda vez. Corrigido: primeiro finaliza o
+    // pedido de verdade, só depois registra a venda no fluxo de caixa.
+    const previousStatus = order.status;
+    const previousDeliveryStatus = order.delivery_status;
+    console.log('[FINALIZAR] Enviando updates:', updates);
+    try {
+      await base44.entities.Order.update(order.id, updates);
+      console.log('[FINALIZAR] Order.update concluído com sucesso.');
+    } catch (error) {
+      console.log('[FINALIZAR] Order.update FALHOU:', error.message);
+      throw error;
+    }
+
     if (newStatus === 'Finalizado') {
+      console.log('[FINALIZAR] Tentando registrar no fluxo de caixa...');
       try {
         await base44.cash.syncSale({
           orderId: order.id,
@@ -320,15 +340,18 @@ export default function Deliveries() {
           occurredAt: new Date().toISOString(),
         });
       } catch (error) {
+        console.log('[FINALIZAR] cash.syncSale FALHOU:', error.message, error);
+        // Se o registro no fluxo de caixa falhar, desfaz a finalização do
+        // pedido (volta pro status anterior) pra não deixar um pedido
+        // "finalizado" sem a venda correspondente registrada — o
+        // entregador pode tentar de novo.
+        await base44.entities.Order.update(order.id, {
+          status: previousStatus,
+          delivery_status: previousDeliveryStatus,
+        }).catch(() => {});
         alert(`Não foi possível registrar a venda no fluxo de caixa: ${error.message}`);
         return;
       }
-    }
-    try {
-      await base44.entities.Order.update(order.id, updates);
-    } catch (error) {
-      if (newStatus === 'Finalizado') await base44.cash.removeReference('order', order.id).catch(() => {});
-      throw error;
     }
 
     if (newStatus === 'Finalizado' && order.delivery_sequence != null && order.deliverer_id) {

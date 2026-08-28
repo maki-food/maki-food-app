@@ -275,7 +275,13 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
           }),
     };
 
-    if (status === 'Finalizado' && isPickupOrder) {
+    try {
+      await base44.entities.Order.update(order.id, nextPayload);
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Não foi possível atualizar o status', description: error.message });
+      return;
+    }
+    if (status === 'Finalizado') {
       try {
         await base44.cash.syncSale({
           orderId: order.id,
@@ -287,19 +293,17 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
           paymentAmount1: order.payment_amount_1,
           paymentAmount2: order.payment_amount_2,
           paymentFees: settings?.payment_fees,
-          occurredAt: new Date().toISOString(),
+          occurredAt: nextPayload.delivery_completed_at,
         });
       } catch (error) {
-        toast({ variant: 'destructive', title: 'Retirada não lançada no caixa', description: error.message });
+        await base44.entities.Order.update(order.id, {
+          status: order.status,
+          delivery_status: order.delivery_status || 'Pendente',
+          delivery_completed_at: null,
+        }).catch(() => {});
+        toast({ variant: 'destructive', title: 'Venda não lançada no caixa', description: error.message });
         return;
       }
-    }
-    try {
-      await base44.entities.Order.update(order.id, nextPayload);
-    } catch (error) {
-      if (status === 'Finalizado' && isPickupOrder) await base44.cash.removeReference('order', order.id).catch(() => {});
-      toast({ variant: 'destructive', title: 'Não foi possível atualizar o status', description: error.message });
-      return;
     }
     if (status !== 'Finalizado' && order.status === 'Finalizado') {
       await base44.cash.removeReference('order', order.id);

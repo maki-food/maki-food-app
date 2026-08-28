@@ -745,21 +745,18 @@ const cash = {
     const digitalFee = methods.reduce((sum, [method, value]) => sum + (isDigital(method) ? value * getFeeRate(method) / 100 : 0), 0);
     const { data: { user } } = await supabase.auth.getUser();
     const paymentLabel = methods.map(([method]) => method).join(' + ');
-    const { error } = await supabase.from('cash_transactions').upsert({
-      type: 'entry',
-      category: 'Venda',
-      description: `Pedido ${invoiceNumber || ''} - ${restaurantName || 'Cliente'}`.trim(),
-      amount: Math.max(0, amount - feeAmount),
-      payment_method: paymentLabel || 'Dinheiro',
-      cash_amount: Math.max(0, cashAmount),
-      digital_amount: Math.max(0, digitalAmount - digitalFee),
-      gross_amount: amount,
-      fee_amount: feeAmount,
-      reference_type: 'order',
-      reference_id: orderId,
-      occurred_at: occurredAt || new Date().toISOString(),
-      created_by_id: user?.id || null,
-    }, { onConflict: 'reference_type,reference_id' });
+    const { error } = await supabase.rpc('register_completed_order_sale', {
+      p_order_id: orderId,
+      p_restaurant_name: restaurantName || 'Cliente',
+      p_invoice_number: invoiceNumber || '',
+      p_amount: Math.max(0, amount - feeAmount),
+      p_payment_method: paymentLabel || 'Dinheiro',
+      p_cash_amount: Math.max(0, cashAmount),
+      p_digital_amount: Math.max(0, digitalAmount - digitalFee),
+      p_gross_amount: amount,
+      p_fee_amount: feeAmount,
+      p_occurred_at: occurredAt || new Date().toISOString(),
+    });
     throwIfError(error);
   },
 
