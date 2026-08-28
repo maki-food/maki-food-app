@@ -258,13 +258,20 @@ export default function Cart() {
       }
 
       // A RPC antiga pode não conhecer a coluna nova; garante o tipo após a criação.
-      const createdOrderId = createdOrder?.id || createdOrder?.[0]?.id || (typeof createdOrder === 'string' ? createdOrder : null);
-      if (createdOrderId) {
-        const { error: deliveryTypeError } = await supabase
-          .from('orders')
-          .update({ delivery_type: checkoutForm.delivery_type })
-          .eq('id', createdOrderId);
-        if (deliveryTypeError) throw new Error(deliveryTypeError.message || 'Não foi possível salvar o tipo de atendimento.');
+      const createdOrderId = createdOrder?.id
+        || createdOrder?.order?.id
+        || createdOrder?.[0]?.id
+        || (typeof createdOrder === 'string' ? createdOrder : null);
+      let orderUpdate = supabase.from('orders').update({
+        delivery_type: checkoutForm.delivery_type,
+        payment_method: checkoutForm.payment_method,
+      });
+      orderUpdate = createdOrderId
+        ? orderUpdate.eq('id', createdOrderId)
+        : orderUpdate.eq('invoice_number', invoiceNumber);
+      const { error: deliveryTypeError } = await orderUpdate;
+      if (deliveryTypeError) {
+        throw new Error(deliveryTypeError.message || 'Não foi possível salvar a forma de pagamento do pedido.');
       }
 
       void logAction('Pedido Criado', `${restaurant.restaurant_name} - ${formatBRL(grandTotal)} - Pedido #${createdOrder?.invoice_number || '-'}`);

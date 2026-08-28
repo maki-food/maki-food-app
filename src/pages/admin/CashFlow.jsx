@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { base44 } from '@/api/supabaseClient';
+import { useSettings } from '@/context/SettingsContext';
 import { formatBRL, formatDate, formatDateShort, getOrderDisplayItems, getOrderItemQuantityLabel, getOrderItemSubtotal } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +14,7 @@ const emptyEntry = { description: '', category: 'Reforço de caixa', amount: '',
 const emptyExpense = { description: '', category: 'Despesa operacional', amount: '', payment_method: 'Dinheiro', cash_amount: '', digital_amount: '', occurred_at: new Date().toISOString().slice(0, 10) };
 
 export default function CashFlow() {
+  const { settings } = useSettings();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -28,6 +30,8 @@ export default function CashFlow() {
   const [relatedRecord, setRelatedRecord] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const isPickupOrder = relatedRecord?.delivery_type === 'pickup'
+    || (settings?.pickup_address && relatedRecord?.delivery_address === settings.pickup_address);
 
   const load = async () => {
     try { setTransactions(await base44.entities.CashTransaction.list('-occurred_at', 500)); } catch (error) {
@@ -250,7 +254,7 @@ export default function CashFlow() {
                 <div><p className="text-xs text-slate-400">Divisão do saldo</p><p className="text-slate-700">Físico: {formatBRL(selectedTransaction.cash_amount)} • Digital: {formatBRL(selectedTransaction.digital_amount)}</p></div>
               </div>
               {detailLoading && <p className="text-slate-500">Carregando dados vinculados...</p>}
-              {relatedRecord && selectedTransaction.reference_type === 'order' && <div className="space-y-3 border-t border-slate-100 pt-4"><h3 className="font-semibold text-slate-900">Pedido {relatedRecord.invoice_number || ''}</h3><div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><p><span className="text-slate-400">Cliente:</span> {relatedRecord.restaurant_name}</p><p><span className="text-slate-400">Status:</span> {relatedRecord.status}</p><p className="sm:col-span-2"><span className="text-slate-400">Atendimento:</span> {relatedRecord.delivery_type === 'pickup' ? 'RETIRADA EM LOJA' : relatedRecord.delivery_address}</p><p><span className="text-slate-400">Pagamento:</span> {relatedRecord.payment_method_2 ? `${relatedRecord.payment_method} + ${relatedRecord.payment_method_2}` : relatedRecord.payment_method}</p></div><div className="rounded-lg bg-slate-50 p-3"><p className="mb-2 font-medium">Itens</p>{getOrderDisplayItems(relatedRecord).map((item, index) => <div key={index} className="flex justify-between"><span>{getOrderItemQuantityLabel(item)} {item.product_name}</span><span>{formatBRL(getOrderItemSubtotal(item))}</span></div>)}</div>{relatedRecord.delivery_photo_url && <img src={relatedRecord.delivery_photo_url} alt="Comprovante" className="h-32 w-32 rounded-lg border border-slate-200 object-cover" />}</div>}
+              {relatedRecord && selectedTransaction.reference_type === 'order' && <div className="space-y-3 border-t border-slate-100 pt-4"><h3 className="font-semibold text-slate-900">Pedido {relatedRecord.invoice_number || ''}</h3><div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><p><span className="text-slate-400">Cliente:</span> {relatedRecord.restaurant_name}</p><p><span className="text-slate-400">Status:</span> {relatedRecord.status}</p><p className="sm:col-span-2"><span className="text-slate-400">{isPickupOrder ? 'Local de retirada:' : 'Endereço de entrega:'}</span> {isPickupOrder ? 'Retirada na loja' : relatedRecord.delivery_address}</p>{!isPickupOrder && relatedRecord.deliverer_name && <p><span className="text-slate-400">Entregador:</span> {relatedRecord.deliverer_name}</p>}<p><span className="text-slate-400">Pagamento:</span> {relatedRecord.payment_method_2 ? `${relatedRecord.payment_method} + ${relatedRecord.payment_method_2}` : relatedRecord.payment_method}</p></div><div className="rounded-lg bg-slate-50 p-3"><p className="mb-2 font-medium">Itens</p>{getOrderDisplayItems(relatedRecord).map((item, index) => <div key={index} className="flex justify-between"><span>{getOrderItemQuantityLabel(item)} {item.product_name}</span><span>{formatBRL(getOrderItemSubtotal(item))}</span></div>)}</div>{relatedRecord.delivery_photo_url && <div className="space-y-2"><p className="text-xs text-slate-400">Comprovante</p><a href={relatedRecord.delivery_photo_url} target="_blank" rel="noreferrer" title="Abrir comprovante em tamanho completo"><img src={relatedRecord.delivery_photo_url} alt="Comprovante" className="h-32 w-32 cursor-zoom-in rounded-lg border border-slate-200 object-cover" /></a></div>}</div>}
               {relatedRecord && selectedTransaction.reference_type === 'purchase' && <div className="space-y-3 border-t border-slate-100 pt-4"><h3 className="font-semibold text-slate-900">Compra vinculada</h3><p><span className="text-slate-400">Fornecedor:</span> {relatedRecord.supplier_name}</p><p><span className="text-slate-400">Nota:</span> {relatedRecord.invoice_number}</p><p><span className="text-slate-400">Data:</span> {formatDateShort(relatedRecord.date)}</p>{Array.isArray(relatedRecord.products) && <div className="rounded-lg bg-slate-50 p-3"><p className="mb-2 font-medium">Produtos</p>{relatedRecord.products.map((product, index) => <div key={index} className="flex justify-between"><span>{product.product_name}</span><span>{product.quantity} • {formatBRL(product.price)}</span></div>)}</div>}</div>}
             </div>
           </>}

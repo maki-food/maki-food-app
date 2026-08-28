@@ -427,7 +427,7 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div className="flex items-start gap-2">
               <MapPin className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
-              <div><p className="text-slate-400 text-xs">{isPickupOrder ? 'RETIRADA EM LOJA' : 'Endereço de Entrega'}</p><p className="text-slate-700">{isPickupOrder ? 'RETIRADA EM LOJA' : order.delivery_address}</p></div>
+              <div><p className="text-slate-400 text-xs">{isPickupOrder ? 'Local de retirada' : 'Endereço de Entrega'}</p><p className="text-slate-700">{isPickupOrder ? 'Retirada na loja' : order.delivery_address}</p></div>
             </div>
             <div className="flex items-start gap-2">
               <CreditCard className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
