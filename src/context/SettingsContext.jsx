@@ -5,7 +5,7 @@ import { hexToHsl, darken } from '@/lib/audit';
 const SettingsContext = createContext(null);
 export const useSettings = () => useContext(SettingsContext);
 
-const DEFAULTS = { app_name: 'SushiPro', logo_url: '', hero_image_url: '', hero_image_mobile_url: '', banners: [], desktop_banners: [], mobile_banners: [], banner_interval: 5, sidebar_bg: '#0f172a', primary_color: '#059669', page_bg: '#f8fafc', topbar_bg: '#ffffff', category_bar_bg: '#f8fafc', admin_text_color: '#ffffff', store_text_color: '#475569', cart_card_bg: '#059669', cart_card_text: '#ffffff', cart_button_bg: '#ffffff', cart_button_text: '#047857', invoice_logo_url: '', invoice_header_text: 'Comprovante de Pedido', invoice_footer_text: '', expiration_threshold_days: 7, payment_methods: ['Pix', 'Dinheiro'], payment_fees: {}, shipping_fee: 20, free_shipping_threshold: 200, pickup_address: '' };
+const DEFAULTS = { app_name: 'Maki Food - Tudo Para Seu Restaurante', logo_url: '', hero_image_url: '', hero_image_mobile_url: '', banners: [], desktop_banners: [], mobile_banners: [], banner_interval: 5, sidebar_bg: '#0f172a', primary_color: '#059669', page_bg: '#f8fafc', topbar_bg: '#ffffff', category_bar_bg: '#f8fafc', admin_text_color: '#ffffff', store_text_color: '#475569', cart_card_bg: '#059669', cart_card_text: '#ffffff', cart_button_bg: '#ffffff', cart_button_text: '#047857', invoice_logo_url: '', invoice_header_text: 'Comprovante de Pedido', invoice_footer_text: '', expiration_threshold_days: 7, payment_methods: ['Pix', 'Dinheiro'], payment_fees: {}, shipping_fee: 20, free_shipping_threshold: 200, pickup_address: '' };
 
 const normalizeAppSettings = (raw) => {
   if (!raw) return DEFAULTS;
@@ -49,7 +49,7 @@ export const SettingsProvider = ({ children }) => {
     root.style.setProperty('--primary', hexToHsl(settings.primary_color || DEFAULTS.primary_color));
     root.style.setProperty('--primary-foreground', '0 0% 100%');
     root.style.setProperty('--background', hexToHsl(settings.page_bg || DEFAULTS.page_bg));
-    document.title = `${settings.app_name || 'SushiPro'} - Suprimentos para Sushi`;
+    document.title = settings.app_name || 'Maki Food - Tudo Para Seu Restaurante';
 
     let style = document.getElementById('dynamic-theme');
     if (!style) {

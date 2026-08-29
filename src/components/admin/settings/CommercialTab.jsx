@@ -55,7 +55,7 @@ export default function CommercialTab() {
         });
       } else {
         await base44.entities.AppSettings.create({
-          app_name: 'SushiPro',
+          app_name: 'Maki Food - Tudo Para Seu Restaurante',
           payment_methods: paymentMethods,
           payment_fees: paymentFees,
           shipping_fee: shippingFee,

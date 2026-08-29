@@ -36,7 +36,7 @@ export default function ClientLayout() {
               <div className="w-9 h-9 rounded-xl flex items-center justify-center overflow-hidden flex-shrink-0" style={{ backgroundColor: settings?.primary_color || '#059669' }}>
                 {settings?.logo_url ? <img src={settings.logo_url} alt="Logo" className="w-full h-full object-cover" /> : <Fish className="w-5 h-5 text-white" />}
               </div>
-              <span className="font-bold text-lg whitespace-nowrap">{settings?.app_name || 'SushiPro'}</span>
+              <span className="font-bold text-lg whitespace-nowrap">{settings?.app_name || 'Maki Food - Tudo Para Seu Restaurante'}</span>
             </Link>
 
             <form onSubmit={handleSearch} className="hidden lg:flex flex-shrink-0 w-[22rem]">

@@ -113,8 +113,8 @@ export default function Sidebar({ open, onClose, user, userRole = 'admin' }) {
             {settings?.logo_url ? <img src={settings.logo_url} alt="Logo" className="w-full h-full object-cover" /> : <Fish className="w-6 h-6 text-white" />}
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="font-bold text-base leading-tight">{settings?.app_name || 'SushiPro'}</h1>
-            <p className="text-xs opacity-60">Suprimentos</p>
+            <h1 className="font-bold text-base leading-tight">{settings?.app_name || 'Maki Food - Tudo Para Seu Restaurante'}</h1>
+            <p className="text-xs opacity-60">Restaurante</p>
           </div>
           <button onClick={onClose} className="lg:hidden opacity-60 hover:opacity-100">
             <X className="w-5 h-5" />

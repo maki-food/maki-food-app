@@ -130,6 +130,20 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
   };
 
   const { settings } = useSettings();
+  // Antes essa lista era fixa no código ("Dinheiro", "Pix", "Cartão débito",
+  // "Cartão crédito"), com grafia diferente da lista configurável que o
+  // cliente usa no checkout (settings.payment_methods). Se o texto não
+  // batesse exatamente (ex: "crédito" x "Crédito"), o <select> não achava
+  // a opção certa e mostrava sempre a primeira ("Dinheiro") — mesmo o
+  // pedido tendo sido feito com outra forma de pagamento. Agora usa a
+  // mesma lista configurada, e sempre inclui a forma de pagamento atual
+  // do pedido mesmo que não esteja mais na lista configurada (pedido
+  // antigo, ou configuração mudou depois).
+  const orderPaymentMethods = Array.from(new Set([
+    ...(settings?.payment_methods || ['Pix', 'Dinheiro']),
+    ...(order.payment_method ? [order.payment_method] : []),
+    ...(order.payment_method_2 ? [order.payment_method_2] : []),
+  ]));
   const isPickupOrder = order.delivery_type === 'pickup'
     || (settings?.pickup_address && order.delivery_address === settings.pickup_address);
   const SHIPPING_FEE = settings?.shipping_fee ?? 0;
@@ -431,7 +445,7 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
             </div>
             <div className="flex items-start gap-2">
               <CreditCard className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
-              <div className="w-full"><p className="text-slate-400 text-xs">Forma de Pagamento</p><select value={paymentMethod} onChange={e => { const value = e.target.value; setPaymentMethod(value); if (value === '2 formas de pagamento') { setPaymentMethod1(''); setPaymentMethod2(''); setPaymentAmount1(''); setPaymentAmount2(''); } else { setPaymentMethod1(value); setPaymentMethod2(''); } }} className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm"><option>Dinheiro</option><option>Pix</option><option>Cartão débito</option><option>Cartão crédito</option><option>2 formas de pagamento</option></select>{paymentMethod === '2 formas de pagamento' && <div className="mt-2 grid grid-cols-1 gap-2"><div className="grid grid-cols-2 gap-2"><select value={paymentMethod1} onChange={e => setPaymentMethod1(e.target.value)} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm"><option value="">Escolha a primeira forma</option><option>Dinheiro</option><option>Pix</option><option>Cartão débito</option><option>Cartão crédito</option></select><select value={paymentMethod2} onChange={e => setPaymentMethod2(e.target.value)} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm"><option value="">Escolha a segunda forma</option><option>Dinheiro</option><option>Pix</option><option>Cartão débito</option><option>Cartão crédito</option></select></div><div className="grid grid-cols-2 gap-2"><input type="number" min="0" step="0.01" value={paymentAmount1} onChange={e => updateFirstPaymentAmount(e.target.value)} placeholder="Valor 1" className="h-9 rounded-md border border-slate-200 px-2 text-sm" /><input type="number" min="0" step="0.01" value={paymentAmount2} onChange={e => setPaymentAmount2(e.target.value)} placeholder="Valor 2" className="h-9 rounded-md border border-slate-200 px-2 text-sm" /></div></div>}<Button type="button" size="sm" variant="outline" className="mt-2" onClick={savePayment}>Salvar pagamento</Button></div>
+              <div className="w-full"><p className="text-slate-400 text-xs">Forma de Pagamento</p><select value={paymentMethod} onChange={e => { const value = e.target.value; setPaymentMethod(value); if (value === '2 formas de pagamento') { setPaymentMethod1(''); setPaymentMethod2(''); setPaymentAmount1(''); setPaymentAmount2(''); } else { setPaymentMethod1(value); setPaymentMethod2(''); } }} className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm">{orderPaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}<option>2 formas de pagamento</option></select>{paymentMethod === '2 formas de pagamento' && <div className="mt-2 grid grid-cols-1 gap-2"><div className="grid grid-cols-2 gap-2"><select value={paymentMethod1} onChange={e => setPaymentMethod1(e.target.value)} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm"><option value="">Escolha a primeira forma</option>{orderPaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}</select><select value={paymentMethod2} onChange={e => setPaymentMethod2(e.target.value)} className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm"><option value="">Escolha a segunda forma</option>{orderPaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}</select></div><div className="grid grid-cols-2 gap-2"><input type="number" min="0" step="0.01" value={paymentAmount1} onChange={e => updateFirstPaymentAmount(e.target.value)} placeholder="Valor 1" className="h-9 rounded-md border border-slate-200 px-2 text-sm" /><input type="number" min="0" step="0.01" value={paymentAmount2} onChange={e => setPaymentAmount2(e.target.value)} placeholder="Valor 2" className="h-9 rounded-md border border-slate-200 px-2 text-sm" /></div></div>}<Button type="button" size="sm" variant="outline" className="mt-2" onClick={savePayment}>Salvar pagamento</Button></div>
             </div>
             <div className="flex items-start gap-2">
               <Phone className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />

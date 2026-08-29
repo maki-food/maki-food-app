@@ -1,7 +1,7 @@
 {
-  "name": "SushiPro - Suprimentos para Sushi",
-  "short_name": "SushiPro",
-  "description": "Plataforma B2B de suprimentos para sushi",
+  "name": "Maki Food - Tudo Para Seu Restaurante",
+  "short_name": "Maki Food",
+  "description": "Tudo para seu restaurante",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f172a",

@@ -75,7 +75,7 @@ export default function InvoiceLayoutTab() {
     setSaving(true);
     try {
       const payload = {
-        app_name: settings?.app_name || 'SushiPro',
+        app_name: settings?.app_name || 'Maki Food - Tudo Para Seu Restaurante',
         invoice_logo_url: form.invoice_logo_url,
         invoice_header_text: form.invoice_header_text,
         invoice_footer_text: form.invoice_footer_text,

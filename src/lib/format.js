@@ -78,7 +78,7 @@ export const printOrder = (order, settings = {}) => {
   const headerText = settings.invoice_header_text || 'Comprovante de Pedido';
   const footerText = settings.invoice_footer_text || '';
   const logoUrl = settings.invoice_logo_url || settings.logo_url || '';
-  const appName = settings.app_name || 'SushiPro Suprimentos';
+  const appName = settings.app_name || 'Maki Food - Tudo Para Seu Restaurante';
 
   const buildCopy = () => `
     <div class="copy">

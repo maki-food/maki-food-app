@@ -81,7 +81,7 @@ export default function AdminLayout() {
               <button onClick={() => setSidebarOpen(true)} className="lg:hidden">
                 <Menu className="w-5 h-5" />
               </button>
-              <span className="font-bold">{settings?.app_name || 'SushiPro'}</span>
+              <span className="font-bold">{settings?.app_name || 'Maki Food - Tudo Para Seu Restaurante'}</span>
             </>
           )}
           <button onClick={handleLogout} className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900">

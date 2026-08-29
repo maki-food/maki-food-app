@@ -18,14 +18,14 @@ const ColorField = ({ label, value, onChange }) => (
 
 export default function BrandingTab() {
   const { settings, refresh } = useSettings();
-  const [form, setForm] = useState({ app_name: 'SushiPro', logo_url: '', hero_image_url: '', banners: [], desktop_banners: [], mobile_banners: [], banner_interval: 5, whatsapp_number: '', sidebar_bg: '#0f172a', primary_color: '#059669', page_bg: '#f8fafc', topbar_bg: '#ffffff', category_bar_bg: '#f8fafc', admin_text_color: '#ffffff', store_text_color: '#475569', cart_card_bg: '#059669', cart_card_text: '#ffffff', cart_button_bg: '#ffffff', cart_button_text: '#047857', expiration_threshold_days: 7 });
+  const [form, setForm] = useState({ app_name: 'Maki Food - Tudo Para Seu Restaurante', logo_url: '', hero_image_url: '', banners: [], desktop_banners: [], mobile_banners: [], banner_interval: 5, whatsapp_number: '', sidebar_bg: '#0f172a', primary_color: '#059669', page_bg: '#f8fafc', topbar_bg: '#ffffff', category_bar_bg: '#f8fafc', admin_text_color: '#ffffff', store_text_color: '#475569', cart_card_bg: '#059669', cart_card_text: '#ffffff', cart_button_bg: '#ffffff', cart_button_text: '#047857', expiration_threshold_days: 7 });
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (settings) {
       setForm({
-        app_name: settings.app_name || 'SushiPro',
+        app_name: settings.app_name || 'Maki Food - Tudo Para Seu Restaurante',
         logo_url: settings.logo_url || '',
         hero_image_url: settings.hero_image_url || '',
         banners: settings.banners || [],
@@ -208,7 +208,7 @@ export default function BrandingTab() {
         </div>
         <div>
           <Label>Nome do App</Label>
-          <Input value={form.app_name} onChange={e => setForm({ ...form, app_name: e.target.value })} className="mt-1" placeholder="SushiPro" />
+          <Input value={form.app_name} onChange={e => setForm({ ...form, app_name: e.target.value })} className="mt-1" placeholder="Maki Food - Tudo Para Seu Restaurante" />
           <p className="text-xs text-slate-400 mt-1">Este nome aparece na barra lateral, no cabeçalho da loja e no título do navegador</p>
         </div>
         <div>

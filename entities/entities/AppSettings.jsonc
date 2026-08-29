@@ -4,7 +4,7 @@
   "properties": {
     "app_name": {
       "type": "string",
-      "default": "SushiPro"
+      "default": "Maki Food - Tudo Para Seu Restaurante"
     },
     "logo_url": {
       "type": "string"
