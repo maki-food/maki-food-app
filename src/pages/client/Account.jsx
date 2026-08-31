@@ -233,11 +233,15 @@ export default function Account() {
     try {
       if (nextValue) {
         if (isIosSafariWebPushUnsupported()) {
-          throw new Error('O Safari do iPhone não suporta notificações web push em sites. Use Chrome ou Android, ou instale o app como atalho na tela inicial para receber avisos nativos do sistema.');
+          setOrderNotificationsEnabled(false);
+          setUser(prev => ({ ...prev, order_status_notifications: false }));
+          return;
         }
 
         if (typeof Notification === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-          throw new Error('Notificações não suportadas neste navegador.');
+          setOrderNotificationsEnabled(false);
+          setUser(prev => ({ ...prev, order_status_notifications: false }));
+          return;
         }
 
         if (Notification.permission === 'denied') {
