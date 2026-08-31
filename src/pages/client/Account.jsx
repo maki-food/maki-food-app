@@ -217,6 +217,14 @@ export default function Account() {
     }
   };
 
+  const isIosSafariWebPushUnsupported = () => {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isSafari = /Safari/.test(ua) && !/Chrome|CriOS|Android/.test(ua);
+    return isIOS && isSafari;
+  };
+
   const handleOrderNotificationsToggle = async (nextValue) => {
     if (!user?.id) return;
 
@@ -224,6 +232,10 @@ export default function Account() {
 
     try {
       if (nextValue) {
+        if (isIosSafariWebPushUnsupported()) {
+          throw new Error('O Safari do iPhone não suporta notificações web push em sites. Use Chrome ou Android, ou instale o app como atalho na tela inicial para receber avisos nativos do sistema.');
+        }
+
         if (typeof Notification === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
           throw new Error('Notificações não suportadas neste navegador.');
         }
