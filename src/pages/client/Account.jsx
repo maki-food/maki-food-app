@@ -221,7 +221,6 @@ export default function Account() {
     if (!user?.id) return;
 
     const previousValue = orderNotificationsEnabled;
-    setOrderNotificationsEnabled(nextValue);
 
     try {
       if (nextValue) {
@@ -241,9 +240,10 @@ export default function Account() {
           }
         }
 
+        await navigator.serviceWorker.register('/sw.js').catch(() => null);
         const registration = await navigator.serviceWorker.ready.catch(() => null);
         if (!registration) {
-          throw new Error('O serviço de notificações ainda não está pronto. Tente novamente em alguns segundos.');
+          throw new Error('Serviço de notificações ainda não está pronto. Tente novamente em alguns segundos.');
         }
 
         const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BGQAPdL0BRSdzTuEWz5bBAXYGVyxv-aSW75rHywE_VTxLXRBQOBO_HHqf1eOE08Mx3MlBIKlLIH_hBaxPTBgBvk';
@@ -251,18 +251,16 @@ export default function Account() {
         const paddedKey = normalizedKey.padEnd(normalizedKey.length + ((4 - normalizedKey.length % 4) % 4), '=');
         const applicationServerKey = Uint8Array.from(atob(paddedKey), char => char.charCodeAt(0));
 
-        const existingSubscription = await registration.pushManager.getSubscription().catch(() => null);
-        if (existingSubscription) {
-          await existingSubscription.unsubscribe().catch(() => {});
+        let subscription = await registration.pushManager.getSubscription().catch(() => null);
+        if (!subscription) {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey,
+          }).catch((subscribeError) => {
+            console.error('Erro ao criar inscrição de push:', subscribeError);
+            throw new Error('Não foi possível ativar as notificações neste aparelho.');
+          });
         }
-
-        const subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey,
-        }).catch((subscribeError) => {
-          console.error('Erro ao criar inscrição de push:', subscribeError);
-          throw new Error('Não foi possível ativar as notificações neste aparelho.');
-        });
 
         const subscriptionJson = subscription.toJSON();
         const { error } = await supabase.from('push_subscriptions').upsert({
@@ -292,6 +290,7 @@ export default function Account() {
       console.error('Erro ao atualizar preferência de notificações:', error);
       setOrderNotificationsEnabled(previousValue);
       setUser(prev => ({ ...prev, order_status_notifications: previousValue }));
+      alert(error?.message || 'Não foi possível atualizar a preferência de notificações.');
     }
   };
 
