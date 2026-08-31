@@ -219,52 +219,46 @@ export default function Account() {
     }
   };
 
-  const isIosSafariWebPushUnsupported = () => {
-    if (typeof navigator === 'undefined') return false;
-    const ua = navigator.userAgent || '';
-    const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const isSafari = /Safari/.test(ua) && !/Chrome|CriOS|Android/.test(ua);
-    return isIOS && isSafari;
-  };
-
   const handleOrderNotificationsToggle = async (nextValue) => {
     if (!user?.id || isTogglingNotifications) return;
 
     const previousValue = orderNotificationsEnabled;
     setIsTogglingNotifications(true);
+    setNotificationSupportMessage('');
 
     try {
       if (nextValue) {
-        if (isIosSafariWebPushUnsupported()) {
-          setNotificationSupportMessage('Este navegador não suporta notificações push do site. Use Chrome/Android ou app nativo para receber avisos.');
-          setOrderNotificationsEnabled(false);
-          setUser(prev => ({ ...prev, order_status_notifications: false }));
-          return;
-        }
-
         if (typeof Notification === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-          setNotificationSupportMessage('Este navegador não oferece suporte para notificações push web.');
+          setNotificationSupportMessage('Este navegador não oferece suporte para push web. No iPhone/Safari isso é uma limitação do navegador e não do app.');
           setOrderNotificationsEnabled(false);
           setUser(prev => ({ ...prev, order_status_notifications: false }));
           return;
         }
 
         if (Notification.permission === 'denied') {
-          throw new Error('As notificações foram bloqueadas neste navegador.');
+          setNotificationSupportMessage('As notificações foram bloqueadas neste navegador. Ative em Configurações do navegador e tente novamente.');
+          setOrderNotificationsEnabled(false);
+          setUser(prev => ({ ...prev, order_status_notifications: false }));
+          return;
         }
 
         if (Notification.permission === 'default') {
           const permission = await Notification.requestPermission();
           if (permission !== 'granted') {
+            setNotificationSupportMessage('A permissão de notificações foi negada.');
             setOrderNotificationsEnabled(false);
+            setUser(prev => ({ ...prev, order_status_notifications: false }));
             return;
           }
         }
 
-        await navigator.serviceWorker.register('/sw.js').catch(() => null);
-        const registration = await navigator.serviceWorker.ready.catch(() => null);
-        if (!registration) {
-          throw new Error('Serviço de notificações ainda não está pronto. Tente novamente em alguns segundos.');
+        const registration = await navigator.serviceWorker.register('/sw.js').catch(() => null);
+        const readyRegistration = registration || await navigator.serviceWorker.ready.catch(() => null);
+        if (!readyRegistration || !readyRegistration.pushManager) {
+          setNotificationSupportMessage('Este navegador não conseguiu registrar o serviço de notificações. Em iPhone/Safari isso normalmente exige suporte nativo do sistema.');
+          setOrderNotificationsEnabled(false);
+          setUser(prev => ({ ...prev, order_status_notifications: false }));
+          return;
         }
 
         const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BGQAPdL0BRSdzTuEWz5bBAXYGVyxv-aSW75rHywE_VTxLXRBQOBO_HHqf1eOE08Mx3MlBIKlLIH_hBaxPTBgBvk';
@@ -272,9 +266,9 @@ export default function Account() {
         const paddedKey = normalizedKey.padEnd(normalizedKey.length + ((4 - normalizedKey.length % 4) % 4), '=');
         const applicationServerKey = Uint8Array.from(atob(paddedKey), char => char.charCodeAt(0));
 
-        let subscription = await registration.pushManager.getSubscription().catch(() => null);
+        let subscription = await readyRegistration.pushManager.getSubscription().catch(() => null);
         if (!subscription) {
-          subscription = await registration.pushManager.subscribe({
+          subscription = await readyRegistration.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey,
           }).catch((subscribeError) => {
@@ -308,11 +302,12 @@ export default function Account() {
       await base44.entities.User.update(user.id, { order_status_notifications: nextValue });
       setUser(prev => ({ ...prev, order_status_notifications: nextValue }));
       setOrderNotificationsEnabled(nextValue);
+      setNotificationSupportMessage(nextValue ? 'Notificações ativadas.' : 'Notificações desativadas.');
     } catch (error) {
       console.error('Erro ao atualizar preferência de notificações:', error);
       setOrderNotificationsEnabled(previousValue);
       setUser(prev => ({ ...prev, order_status_notifications: previousValue }));
-      alert(error?.message || 'Não foi possível atualizar a preferência de notificações.');
+      setNotificationSupportMessage(error?.message || 'Não foi possível atualizar a preferência de notificações.');
     } finally {
       setIsTogglingNotifications(false);
     }
