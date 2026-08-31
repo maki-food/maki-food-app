@@ -273,7 +273,8 @@ export default function Account() {
         if (error) throw error;
       } else {
         const registration = await navigator.serviceWorker.ready.catch(() => null);
-        const subscription = registration ? await registration.pushManager.getSubscription().catch(() => null) : null;
+        const pushManager = registration && registration.pushManager ? registration.pushManager : null;
+        const subscription = pushManager ? await pushManager.getSubscription().catch(() => null) : null;
 
         if (subscription) {
           await subscription.unsubscribe().catch(() => {});
