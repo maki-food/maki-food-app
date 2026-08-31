@@ -64,6 +64,7 @@ export default function Account() {
   const [orderNotificationsEnabled, setOrderNotificationsEnabled] = useState(false);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
   const [mobileSectionOpen, setMobileSectionOpen] = useState(false);
+  const [isTogglingNotifications, setIsTogglingNotifications] = useState(false);
   const { settings } = useSettings();
   const navigate = useNavigate();
 
@@ -226,9 +227,10 @@ export default function Account() {
   };
 
   const handleOrderNotificationsToggle = async (nextValue) => {
-    if (!user?.id) return;
+    if (!user?.id || isTogglingNotifications) return;
 
     const previousValue = orderNotificationsEnabled;
+    setIsTogglingNotifications(true);
 
     try {
       if (nextValue) {
@@ -308,6 +310,8 @@ export default function Account() {
       setOrderNotificationsEnabled(previousValue);
       setUser(prev => ({ ...prev, order_status_notifications: previousValue }));
       alert(error?.message || 'Não foi possível atualizar a preferência de notificações.');
+    } finally {
+      setIsTogglingNotifications(false);
     }
   };
 
@@ -480,7 +484,8 @@ export default function Account() {
               <button
                 type="button"
                 onClick={() => handleOrderNotificationsToggle(!orderNotificationsEnabled)}
-                className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${orderNotificationsEnabled ? 'bg-emerald-600' : 'bg-slate-300'}`}
+                disabled={isTogglingNotifications}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${orderNotificationsEnabled ? 'bg-emerald-600' : 'bg-slate-300'} ${isTogglingNotifications ? 'opacity-60 cursor-not-allowed' : ''}`}
                 aria-label="Alternar notificações"
               >
                 <span className={`inline-block h-5 w-5 rounded-full bg-white transition ${orderNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
@@ -980,6 +985,16 @@ export default function Account() {
             <span className="text-sm font-medium text-slate-700">Privacidade e dados</span>
           </div>
           <ChevronRight className="w-4 h-4 text-slate-400" />
+        </div>
+      </button>
+
+      <button onClick={handleLogout} className="w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-left shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <LogOut className="w-4 h-4 text-red-600" />
+            <span className="text-sm font-medium text-red-700">Sair</span>
+          </div>
+          <ChevronRight className="w-4 h-4 text-red-400" />
         </div>
       </button>
     </div>
