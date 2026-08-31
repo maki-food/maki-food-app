@@ -63,6 +63,7 @@ export default function Account() {
   const [editingAddress, setEditingAddress] = useState(null); // 1 for primary, 2 for extra, null for none
   const [orderNotificationsEnabled, setOrderNotificationsEnabled] = useState(false);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
+  const [mobileSectionOpen, setMobileSectionOpen] = useState(false);
   const { settings } = useSettings();
   const navigate = useNavigate();
 
@@ -917,10 +918,11 @@ export default function Account() {
     );
   }
 
-  const showSectionList = !isMobile || !selectedSection || selectedSection === null;
+  const showSectionList = !isMobile || !mobileSectionOpen;
 
   const mobileSelectSection = (sectionId) => {
     setSelectedSection(sectionId);
+    setMobileSectionOpen(true);
   };
 
   const renderAccountMobileNav = () => (
@@ -973,7 +975,7 @@ export default function Account() {
         {isMobile && (
           <button
             type="button"
-            onClick={() => setSelectedSection('orders')}
+            onClick={() => setMobileSectionOpen(false)}
             className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200"
             aria-label="Voltar para a conta"
           >
