@@ -62,6 +62,7 @@ export default function Account() {
   const [lookingUpCep2, setLookingUpCep2] = useState(false);
   const [editingAddress, setEditingAddress] = useState(null); // 1 for primary, 2 for extra, null for none
   const [orderNotificationsEnabled, setOrderNotificationsEnabled] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
   const { settings } = useSettings();
   const navigate = useNavigate();
 
@@ -191,6 +192,13 @@ export default function Account() {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 1024);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const handleLogout = () => {
     const cartBackup = localStorage.getItem('cart');
     localStorage.clear();
@@ -211,29 +219,48 @@ export default function Account() {
   const handleOrderNotificationsToggle = async (nextValue) => {
     if (!user?.id) return;
 
+    const previousValue = orderNotificationsEnabled;
+    setOrderNotificationsEnabled(nextValue);
+
     try {
       if (nextValue) {
         if (typeof Notification === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
           throw new Error('Notificações não suportadas neste navegador.');
         }
 
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-          setOrderNotificationsEnabled(false);
-          return;
+        if (Notification.permission === 'denied') {
+          throw new Error('As notificações foram bloqueadas neste navegador.');
+        }
+
+        if (Notification.permission === 'default') {
+          const permission = await Notification.requestPermission();
+          if (permission !== 'granted') {
+            setOrderNotificationsEnabled(false);
+            return;
+          }
+        }
+
+        const registration = await navigator.serviceWorker.ready.catch(() => null);
+        if (!registration) {
+          throw new Error('O serviço de notificações ainda não está pronto. Tente novamente em alguns segundos.');
         }
 
         const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BGQAPdL0BRSdzTuEWz5bBAXYGVyxv-aSW75rHywE_VTxLXRBQOBO_HHqf1eOE08Mx3MlBIKlLIH_hBaxPTBgBvk';
-        const registration = await navigator.serviceWorker.ready;
         const normalizedKey = vapidKey.replace(/-/g, '+').replace(/_/g, '/');
         const paddedKey = normalizedKey.padEnd(normalizedKey.length + ((4 - normalizedKey.length % 4) % 4), '=');
         const applicationServerKey = Uint8Array.from(atob(paddedKey), char => char.charCodeAt(0));
-        const existingSubscription = await registration.pushManager.getSubscription();
-        if (existingSubscription) await existingSubscription.unsubscribe();
+
+        const existingSubscription = await registration.pushManager.getSubscription().catch(() => null);
+        if (existingSubscription) {
+          await existingSubscription.unsubscribe().catch(() => {});
+        }
 
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey,
+        }).catch((subscribeError) => {
+          console.error('Erro ao criar inscrição de push:', subscribeError);
+          throw new Error('Não foi possível ativar as notificações neste aparelho.');
         });
 
         const subscriptionJson = subscription.toJSON();
@@ -246,13 +273,15 @@ export default function Account() {
 
         if (error) throw error;
       } else {
-        const registration = await navigator.serviceWorker.ready;
-        const subscription = await registration.pushManager.getSubscription();
+        const registration = await navigator.serviceWorker.ready.catch(() => null);
+        const subscription = registration ? await registration.pushManager.getSubscription().catch(() => null) : null;
+
         if (subscription) {
-          const { error } = await supabase.from('push_subscriptions').delete().eq('endpoint', subscription.endpoint);
-          if (error) throw error;
-          await subscription.unsubscribe();
+          await subscription.unsubscribe().catch(() => {});
         }
+
+        const { error } = await supabase.from('push_subscriptions').delete().eq('user_id', user.id);
+        if (error) throw error;
       }
 
       await base44.entities.User.update(user.id, { order_status_notifications: nextValue });
@@ -260,8 +289,8 @@ export default function Account() {
       setOrderNotificationsEnabled(nextValue);
     } catch (error) {
       console.error('Erro ao atualizar preferência de notificações:', error);
-      setOrderNotificationsEnabled(!nextValue);
-      alert(error?.message || 'Não foi possível atualizar a preferência de notificações.');
+      setOrderNotificationsEnabled(previousValue);
+      setUser(prev => ({ ...prev, order_status_notifications: previousValue }));
     }
   };
 
@@ -884,6 +913,103 @@ export default function Account() {
             <ChevronRight className="w-4 h-4 text-slate-400" />
           </button>
         </div>
+      </div>
+    );
+  }
+
+  const showSectionList = !isMobile || !selectedSection || selectedSection === null;
+
+  const mobileSelectSection = (sectionId) => {
+    setSelectedSection(sectionId);
+  };
+
+  const renderAccountMobileNav = () => (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-11 h-11 rounded-2xl bg-emerald-100 flex items-center justify-center">
+          <User className="w-5 h-5 text-emerald-600" />
+        </div>
+        <div>
+          <p className="font-bold text-slate-900 truncate">{accountName || user.full_name || 'Minha Conta'}</p>
+          <p className="text-xs text-slate-500 truncate">{user.email}</p>
+        </div>
+      </div>
+
+      {sections.map((section) => {
+        const Icon = section.icon;
+        return (
+          <button
+            key={section.id}
+            type="button"
+            onClick={() => mobileSelectSection(section.id)}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <Icon className="w-4 h-4 text-slate-500" />
+                <span className="text-sm font-medium text-slate-700">{section.label}</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-400" />
+            </div>
+          </button>
+        );
+      })}
+
+      <button onClick={() => mobileSelectSection('privacy')} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="w-4 h-4 text-slate-500" />
+            <span className="text-sm font-medium text-slate-700">Privacidade e dados</span>
+          </div>
+          <ChevronRight className="w-4 h-4 text-slate-400" />
+        </div>
+      </button>
+    </div>
+  );
+
+  const renderAccountDetail = () => (
+    <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+      <div className="flex items-center gap-3 mb-4">
+        {isMobile && (
+          <button
+            type="button"
+            onClick={() => setSelectedSection('orders')}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200"
+            aria-label="Voltar para a conta"
+          >
+            <ChevronRight className="w-4 h-4 rotate-180" />
+          </button>
+        )}
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">
+            {selectedSection === 'orders'
+              ? 'Meus pedidos'
+              : selectedSection === 'personal'
+                ? 'Dados pessoais'
+                : selectedSection === 'address'
+                  ? 'Endereços'
+                  : 'Privacidade e dados'}
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            {selectedSection === 'orders'
+              ? 'Aqui você pode ver uma lista dos pedidos que fez e o status de cada compra.'
+              : selectedSection === 'personal'
+                ? 'Atualize seu nome e telefone de contato.'
+                : selectedSection === 'address'
+                  ? 'Atualize os dados de endereço e o nome do restaurante.'
+                  : 'Informações sobre como seus dados são usados e protegidos.'}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-6">{renderSection()}</div>
+    </section>
+  );
+
+  if (isMobile) {
+    return (
+      <div className="space-y-4">
+        {!showSectionList ? renderAccountDetail() : renderAccountMobileNav()}
       </div>
     );
   }

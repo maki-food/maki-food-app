@@ -14,6 +14,7 @@ export default function MyOrders() {
   const [expanded, setExpanded] = useState(null);
   const [selectedTab, setSelectedTab] = useState('active');
   const notifiedStatusRef = React.useRef(new Set());
+  const userIdRef = React.useRef(null);
 
   const sendOrderStatusNotification = (order, previousStatus) => {
     if (!user?.order_status_notifications || !order?.id || !('Notification' in window) || Notification.permission !== 'granted') return;
@@ -46,7 +47,8 @@ export default function MyOrders() {
     try {
       const u = await base44.auth.me();
       setUser(u);
-      setOrders([]);
+      userIdRef.current = u?.id ?? null;
+
       const restaurants = await base44.entities.Restaurant.filter({ user_id: u.id }).catch(() => []);
       const restaurant = restaurants[0];
       const allOrders = await base44.entities.Order.list('-created_date', 200);
@@ -58,6 +60,7 @@ export default function MyOrders() {
       setOrders((allOrders || []).filter(matchesCustomer));
     } catch {
       setUser(null);
+      userIdRef.current = null;
     }
     if (!silent) setLoading(false);
   };
@@ -65,20 +68,12 @@ export default function MyOrders() {
   useEffect(() => {
     load();
 
-    // REMOVIDO: existia aqui um setInterval fazendo essa mesma busca
-    // (user + restaurant + orders — 3 requisições) A CADA 1 SEGUNDO,
-    // rodando JUNTO com o realtime abaixo, que já faz a mesma coisa de
-    // forma orientada a evento. Isso sozinho explica o "3 fetches
-    // idênticos em sequência" que aparece no Network — em 1 segundo esse
-    // polling roda de novo, empilhando com o realtime. É carga desnecessária
-    // no banco e não tem nenhuma vantagem sobre o realtime (que já é
-    // instantâneo). Não reintroduza polling aqui.
     const unsub = base44.entities.Order.subscribe((event) => {
       if (event.type === 'refresh' || event.type === 'create' || event.type === 'update' || event.type === 'delete') {
         load({ silent: true });
       }
 
-      if (event.type === 'update' && event.data?.created_by_id === user?.id) {
+      if (event.type === 'update' && event.data?.created_by_id === userIdRef.current) {
         sendOrderStatusNotification(event.data, event.previousData?.status);
       }
     });

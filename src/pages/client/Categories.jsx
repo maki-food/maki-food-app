@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { base44 } from '@/api/supabaseClient';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronRight, ChevronDown, Layers } from 'lucide-react';
+import { ChevronRight, ChevronDown, Layers, ChevronLeft } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
 
 export default function Categories() {
@@ -13,8 +13,16 @@ export default function Categories() {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
 
   const loadCategories = () => base44.entities.Category.list('name').then(setCategories).catch(() => {});
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 1024);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     loadCategories().finally(() => setLoading(false));
@@ -119,104 +127,123 @@ export default function Categories() {
     setSearchParams({ categoria: cat.name });
   };
 
+  const renderCategoryList = () => (
+    <aside className="w-full">
+      <div className="sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto pr-2 no-scrollbar">
+        <h1 className="text-2xl font-bold text-slate-900 mb-4">Categorias</h1>
+        {showLoadingCategories ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" />
+          </div>
+        ) : parents.length === 0 ? (
+          <div className="text-center py-16 text-slate-400">
+            <Layers className="w-12 h-12 mx-auto mb-3" />
+            <p className="font-medium">Nenhuma categoria cadastrada</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+            {parents.map(cat => {
+              const children = childrenOf(cat.id);
+              const hasChildren = children.length > 0;
+              const isOpen = expanded.has(cat.id);
+              return (
+                <div key={cat.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (hasChildren) toggleExpand(cat.id);
+                      handleSelectCategory(cat);
+                    }}
+                    className={`w-full flex items-center gap-3 px-4 py-4 text-left ${selectedCategory?.id === cat.id ? 'bg-slate-50' : 'hover:bg-slate-50'}`}
+                  >
+                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0 flex items-center justify-center">
+                      {cat.image_url ? <img src={cat.image_url} alt="" className="w-full h-full object-cover" /> : <Layers className="w-5 h-5 text-slate-300" />}
+                    </div>
+                    <span className="flex-1 font-medium text-slate-900">{cat.name}</span>
+                    {hasChildren ? (
+                      isOpen ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-slate-400" />
+                    )}
+                  </button>
+                  {hasChildren && isOpen && (
+                    <div className="bg-slate-50">
+                      {children.map(child => (
+                        <button
+                          key={child.id}
+                          type="button"
+                          onClick={() => handleSelectCategory(child)}
+                          className={`w-full flex items-center gap-3 pl-14 pr-4 py-3 text-left border-t border-slate-100 ${selectedCategory?.id === child.id ? 'bg-slate-100' : 'hover:bg-slate-100'}`}
+                        >
+                          <span className="flex-1 text-sm font-medium text-slate-700">{child.name}</span>
+                          <ChevronRight className="w-4 h-4 text-slate-300" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+
+  const renderSelectedCategoryView = () => (
+    <main className="mt-0 lg:mt-0 lg:h-full lg:overflow-y-auto lg:pr-2 no-scrollbar">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          {isMobile && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedCategory(null);
+                setSearchParams({});
+              }}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200"
+              aria-label="Voltar para categorias"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+          )}
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">{selectedCategory?.name}</h2>
+            <p className="text-sm text-slate-500">Produtos nesta categoria</p>
+          </div>
+        </div>
+        <span className="text-sm text-slate-400">{products.length} produto(s)</span>
+      </div>
+
+      {loadingProducts ? (
+        <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>
+      ) : products.length === 0 ? (
+        <div className="text-center py-16 text-slate-400">
+          <p className="font-medium">Nenhum produto encontrado nesta categoria</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          {products.map(product => (
+            <ProductCard key={product.id} product={product} variants={[]} />
+          ))}
+        </div>
+      )}
+    </main>
+  );
+
   return (
     <div className="lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       <div className="lg:grid lg:grid-cols-[20rem_1fr] lg:gap-6 lg:h-full">
-        {/* Left sidebar */}
-        <aside className="w-full">
-          <div className="sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto pr-2 no-scrollbar">
-            <h1 className="text-2xl font-bold text-slate-900 mb-4">Categorias</h1>
-            {showLoadingCategories ? (
-              <div className="flex items-center justify-center py-16">
-                <div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" />
-              </div>
-            ) : parents.length === 0 ? (
-              <div className="text-center py-16 text-slate-400">
-                <Layers className="w-12 h-12 mx-auto mb-3" />
-                <p className="font-medium">Nenhuma categoria cadastrada</p>
-              </div>
-            ) : (
-              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
-                {parents.map(cat => {
-                  const children = childrenOf(cat.id);
-                  const hasChildren = children.length > 0;
-                  const isOpen = expanded.has(cat.id);
-                  return (
-                    <div key={cat.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (hasChildren) toggleExpand(cat.id);
-                          handleSelectCategory(cat);
-                        }}
-                        className={`w-full flex items-center gap-3 px-4 py-4 text-left ${selectedCategory?.id === cat.id ? 'bg-slate-50' : 'hover:bg-slate-50'}`}
-                      >
-                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0 flex items-center justify-center">
-                          {cat.image_url ? <img src={cat.image_url} alt="" className="w-full h-full object-cover" /> : <Layers className="w-5 h-5 text-slate-300" />}
-                        </div>
-                        <span className="flex-1 font-medium text-slate-900">{cat.name}</span>
-                        {hasChildren ? (
-                          isOpen ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-slate-400" />
-                        )}
-                      </button>
-                      {hasChildren && isOpen && (
-                        <div className="bg-slate-50">
-                          {children.map(child => (
-                            <button
-                              key={child.id}
-                              type="button"
-                              onClick={() => handleSelectCategory(child)}
-                              className={`w-full flex items-center gap-3 pl-14 pr-4 py-3 text-left border-t border-slate-100 ${selectedCategory?.id === child.id ? 'bg-slate-100' : 'hover:bg-slate-100'}`}
-                            >
-                              <span className="flex-1 text-sm font-medium text-slate-700">{child.name}</span>
-                              <ChevronRight className="w-4 h-4 text-slate-300" />
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </aside>
-
-        {/* Right content */}
-        <main className="mt-6 lg:mt-0 lg:h-full lg:overflow-y-auto lg:pr-2 no-scrollbar">
-          {selectedCategory ? (
-            <>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-900">{selectedCategory.name}</h2>
-                  <p className="text-sm text-slate-500">Produtos nesta categoria</p>
-                </div>
-                <span className="text-sm text-slate-400">{products.length} produto(s)</span>
-              </div>
-
-              {loadingProducts ? (
-                <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" /></div>
-              ) : products.length === 0 ? (
-                <div className="text-center py-16 text-slate-400">
-                  <p className="font-medium">Nenhum produto encontrado nesta categoria</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {products.map(product => (
-                    <ProductCard key={product.id} product={product} variants={[]} />
-                  ))}
-                </div>
-              )}
-            </>
-          ) : (
+        {(!isMobile || !selectedCategory) && renderCategoryList()}
+        {isMobile && selectedCategory ? renderSelectedCategoryView() : !isMobile && selectedCategory ? renderSelectedCategoryView() : null}
+        {!isMobile && !selectedCategory && (
+          <main className="mt-6 lg:mt-0 lg:h-full lg:overflow-y-auto lg:pr-2 no-scrollbar">
             <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500">
               <p className="font-semibold text-slate-900 mb-2">Selecione uma categoria</p>
               <p>Toque em qualquer categoria à esquerda para ver os produtos sem sair da página.</p>
             </div>
-          )}
-        </main>
+          </main>
+        )}
       </div>
     </div>
   );
