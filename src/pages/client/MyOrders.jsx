@@ -13,6 +13,31 @@ export default function MyOrders() {
   const [showAuth, setShowAuth] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [selectedTab, setSelectedTab] = useState('active');
+  const notifiedStatusRef = React.useRef(new Set());
+
+  const sendOrderStatusNotification = (order, previousStatus) => {
+    if (!user?.order_status_notifications || !order?.id || !('Notification' in window) || Notification.permission !== 'granted') return;
+    if (!previousStatus || previousStatus === order.status) return;
+
+    const statusMessages = {
+      'Em Separação': 'Seu pedido está em separação.',
+      'Saiu para Entrega': `Seu pedido saiu para entrega${order.delivery_sequence ? `. Sua posição: ${order.delivery_sequence}.` : '.'}`,
+      'Finalizado': 'Seu pedido foi entregue com sucesso.',
+    };
+
+    const message = statusMessages[order.status];
+    if (!message) return;
+
+    const key = `${order.id}:${order.status}`;
+    if (notifiedStatusRef.current.has(key)) return;
+
+    notifiedStatusRef.current.add(key);
+    new Notification('Maki Food', {
+      body: message,
+      icon: '/favicon.png',
+      tag: key,
+    });
+  };
 
   const load = async (options = {}) => {
     const { silent = false } = options;
@@ -21,6 +46,7 @@ export default function MyOrders() {
     try {
       const u = await base44.auth.me();
       setUser(u);
+      setOrders([]);
       const restaurants = await base44.entities.Restaurant.filter({ user_id: u.id }).catch(() => []);
       const restaurant = restaurants[0];
       const allOrders = await base44.entities.Order.list('-created_date', 200);
@@ -50,7 +76,10 @@ export default function MyOrders() {
     const unsub = base44.entities.Order.subscribe((event) => {
       if (event.type === 'refresh' || event.type === 'create' || event.type === 'update' || event.type === 'delete') {
         load({ silent: true });
-        return;
+      }
+
+      if (event.type === 'update' && event.data?.created_by_id === user?.id) {
+        sendOrderStatusNotification(event.data, event.previousData?.status);
       }
     });
 

@@ -253,6 +253,7 @@ async function me() {
     role: profile?.role || 'user',
     permissions: profile?.permissions || {},
     contact_number: profile?.contact_number || '',
+    order_status_notifications: Boolean(profile?.order_status_notifications),
     created_date: profile?.created_date || user.created_at,
   };
 }
@@ -774,6 +775,14 @@ const notifications = {
   async sendDeliveryAssignment({ delivererId, restaurantName, invoiceNumber, total }) {
     const { data, error } = await supabase.functions.invoke('send-delivery-notification', {
       body: { delivererId, restaurantName, invoiceNumber, total },
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async sendOrderStatusNotification({ userId, orderId, status, deliverySequence, restaurantName }) {
+    const { data, error } = await supabase.functions.invoke('send-order-status-notification', {
+      body: { userId, orderId, status, deliverySequence, restaurantName },
     });
     if (error) throw error;
     return data;

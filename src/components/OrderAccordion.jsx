@@ -295,6 +295,21 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
       toast({ variant: 'destructive', title: 'Não foi possível atualizar o status', description: error.message });
       return;
     }
+
+    if (['Em Separação', 'Saiu para Entrega', 'Finalizado'].includes(status) && order.created_by_id) {
+      try {
+        await base44.notifications.sendOrderStatusNotification({
+          userId: order.created_by_id,
+          orderId: order.id,
+          status,
+          deliverySequence: order.delivery_sequence ?? null,
+          restaurantName: order.restaurant_name,
+        });
+      } catch (error) {
+        console.warn('Não foi possível enviar notificação de status do pedido ao cliente:', error);
+      }
+    }
+
     if (status === 'Finalizado') {
       try {
         await base44.cash.syncSale({

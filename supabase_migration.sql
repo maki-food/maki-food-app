@@ -14,7 +14,8 @@ ADD COLUMN IF NOT EXISTS default_weight_kg numeric;
 
 -- Permissões individuais da equipe, armazenadas por usuário.
 ALTER TABLE public.profiles
-ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
+ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
+ADD COLUMN IF NOT EXISTS order_status_notifications BOOLEAN NOT NULL DEFAULT FALSE;
 
 ALTER TABLE public.purchases
 ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'Dinheiro',

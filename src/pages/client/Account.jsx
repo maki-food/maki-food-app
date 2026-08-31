@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { base44 } from '@/api/supabaseClient';
+import { base44, supabase } from '@/api/supabaseClient';
 import { useSettings } from '@/context/SettingsContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,6 +61,7 @@ export default function Account() {
   const [lookingUpCep, setLookingUpCep] = useState(false);
   const [lookingUpCep2, setLookingUpCep2] = useState(false);
   const [editingAddress, setEditingAddress] = useState(null); // 1 for primary, 2 for extra, null for none
+  const [orderNotificationsEnabled, setOrderNotificationsEnabled] = useState(false);
   const { settings } = useSettings();
   const navigate = useNavigate();
 
@@ -142,6 +143,7 @@ export default function Account() {
 
     const currentUser = await base44.auth.me().catch(() => null);
     setUser(currentUser);
+    setOrderNotificationsEnabled(Boolean(currentUser?.order_status_notifications));
     if (!currentUser) {
       setAccountName(null);
       setRestaurant(null);
@@ -203,6 +205,63 @@ export default function Account() {
       window.open(`https://wa.me/${digits}`, '_blank');
     } else {
       alert('Nenhum WhatsApp de atendimento configurado ainda.');
+    }
+  };
+
+  const handleOrderNotificationsToggle = async (nextValue) => {
+    if (!user?.id) return;
+
+    try {
+      if (nextValue) {
+        if (typeof Notification === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+          throw new Error('Notificações não suportadas neste navegador.');
+        }
+
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          setOrderNotificationsEnabled(false);
+          return;
+        }
+
+        const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BGQAPdL0BRSdzTuEWz5bBAXYGVyxv-aSW75rHywE_VTxLXRBQOBO_HHqf1eOE08Mx3MlBIKlLIH_hBaxPTBgBvk';
+        const registration = await navigator.serviceWorker.ready;
+        const normalizedKey = vapidKey.replace(/-/g, '+').replace(/_/g, '/');
+        const paddedKey = normalizedKey.padEnd(normalizedKey.length + ((4 - normalizedKey.length % 4) % 4), '=');
+        const applicationServerKey = Uint8Array.from(atob(paddedKey), char => char.charCodeAt(0));
+        const existingSubscription = await registration.pushManager.getSubscription();
+        if (existingSubscription) await existingSubscription.unsubscribe();
+
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey,
+        });
+
+        const subscriptionJson = subscription.toJSON();
+        const { error } = await supabase.from('push_subscriptions').upsert({
+          user_id: user.id,
+          endpoint: subscription.endpoint,
+          subscription: subscriptionJson,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'endpoint' });
+
+        if (error) throw error;
+      } else {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          const { error } = await supabase.from('push_subscriptions').delete().eq('endpoint', subscription.endpoint);
+          if (error) throw error;
+          await subscription.unsubscribe();
+        }
+      }
+
+      await base44.entities.User.update(user.id, { order_status_notifications: nextValue });
+      setUser(prev => ({ ...prev, order_status_notifications: nextValue }));
+      setOrderNotificationsEnabled(nextValue);
+    } catch (error) {
+      console.error('Erro ao atualizar preferência de notificações:', error);
+      setOrderNotificationsEnabled(!nextValue);
+      alert(error?.message || 'Não foi possível atualizar a preferência de notificações.');
     }
   };
 
@@ -364,6 +423,23 @@ export default function Account() {
           <div>
             <Label>Telefone pessoal</Label>
             <Input value={form.personal_phone} onChange={e => setForm({ ...form, personal_phone: maskPhone(e.target.value) })} className="mt-1" placeholder="(11) 99999-9999" />
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="font-medium text-slate-900">Notificações do status do pedido</p>
+                <p className="text-xs text-slate-500">Receba alertas quando o seu pedido mudar de etapa.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOrderNotificationsToggle(!orderNotificationsEnabled)}
+                className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${orderNotificationsEnabled ? 'bg-emerald-600' : 'bg-slate-300'}`}
+                aria-label="Alternar notificações"
+              >
+                <span className={`inline-block h-5 w-5 rounded-full bg-white transition ${orderNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
           </div>
 
           <div className="border-t border-slate-100 pt-4 space-y-4">

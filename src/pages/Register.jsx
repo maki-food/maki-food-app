@@ -19,6 +19,7 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [otpCode, setOtpCode] = useState("");
+  const [allowOrderNotifications, setAllowOrderNotifications] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -45,6 +46,12 @@ export default function Register() {
       const result = await base44.auth.verifyOtp({ email, otpCode });
       if (result?.access_token) {
         base44.auth.setToken(result.access_token);
+      }
+      const currentUser = await base44.auth.me().catch(() => null);
+      if (currentUser?.id) {
+        await base44.entities.User.update(currentUser.id, {
+          order_status_notifications: allowOrderNotifications,
+        }).catch(() => {});
       }
       window.location.href = "/";
     } catch (err) {
@@ -207,6 +214,15 @@ export default function Register() {
             required
           />
         </div>
+        <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={allowOrderNotifications}
+            onChange={(e) => setAllowOrderNotifications(e.target.checked)}
+            className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+          />
+          <span>Permitir notificações do status do seu pedido.</span>
+        </label>
         <Button type="submit" className="w-full h-12 font-medium" disabled={loading}>
           {loading ? (
             <>
