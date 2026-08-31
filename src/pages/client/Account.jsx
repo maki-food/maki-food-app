@@ -65,6 +65,7 @@ export default function Account() {
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
   const [mobileSectionOpen, setMobileSectionOpen] = useState(false);
   const [isTogglingNotifications, setIsTogglingNotifications] = useState(false);
+  const [notificationSupportMessage, setNotificationSupportMessage] = useState('');
   const { settings } = useSettings();
   const navigate = useNavigate();
 
@@ -235,12 +236,14 @@ export default function Account() {
     try {
       if (nextValue) {
         if (isIosSafariWebPushUnsupported()) {
+          setNotificationSupportMessage('Este navegador não suporta notificações push do site. Use Chrome/Android ou app nativo para receber avisos.');
           setOrderNotificationsEnabled(false);
           setUser(prev => ({ ...prev, order_status_notifications: false }));
           return;
         }
 
         if (typeof Notification === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+          setNotificationSupportMessage('Este navegador não oferece suporte para notificações push web.');
           setOrderNotificationsEnabled(false);
           setUser(prev => ({ ...prev, order_status_notifications: false }));
           return;
@@ -491,6 +494,9 @@ export default function Account() {
                 <span className={`inline-block h-5 w-5 rounded-full bg-white transition ${orderNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
+            {notificationSupportMessage && (
+              <p className="mt-3 text-xs text-amber-700">{notificationSupportMessage}</p>
+            )}
           </div>
 
           <div className="border-t border-slate-100 pt-4 space-y-4">
