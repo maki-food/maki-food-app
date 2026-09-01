@@ -324,6 +324,24 @@ export default function Deliveries() {
       throw error;
     }
 
+    // Notificação push pro cliente — essa chamada estava faltando aqui.
+    // O OrderAccordion.jsx (retirada, admin) já fazia isso, mas o
+    // Deliveries.jsx (entrega, entregador) nunca chamava — por isso o
+    // cliente nunca recebia "saiu para entrega" nem "finalizado" quando
+    // era o entregador finalizando (o caminho mais comum). Não bloqueia
+    // a entrega se falhar — só loga o aviso.
+    if (['Saiu para Entrega', 'Finalizado'].includes(newStatus) && order.created_by_id) {
+      base44.notifications.sendOrderStatusNotification({
+        userId: order.created_by_id,
+        orderId: order.id,
+        status: newStatus,
+        deliverySequence: order.delivery_sequence ?? null,
+        restaurantName: order.restaurant_name,
+      }).catch((error) => {
+        console.warn('Não foi possível enviar notificação de status do pedido ao cliente:', error);
+      });
+    }
+
     if (newStatus === 'Finalizado') {
       console.log('[FINALIZAR] Tentando registrar no fluxo de caixa...');
       try {

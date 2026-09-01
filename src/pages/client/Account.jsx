@@ -226,10 +226,27 @@ export default function Account() {
     setIsTogglingNotifications(true);
     setNotificationSupportMessage('');
 
+    // Ajuda a diagnosticar: se o processo travar em algum ponto (ex: o
+    // navegador nunca ativa o service worker), isso evita ficar "clicando
+    // e não acontecendo nada" pra sempre — depois de 8s sem resposta,
+    // mostra um erro claro em vez de travar silenciosamente.
+    const withTimeout = (promise, label, ms = 8000) => Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`Tempo esgotado esperando: ${label}`)), ms)),
+    ]);
+
     try {
       if (nextValue) {
+        const isIosSafariFamily = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const isStandalonePwa = window.matchMedia?.('(display-mode: standalone)').matches
+          || window.navigator.standalone === true;
+
         if (typeof Notification === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-          setNotificationSupportMessage('Este navegador não oferece suporte para push web. No iPhone/Safari isso é uma limitação do navegador e não do app.');
+          if (isIosSafariFamily && !isStandalonePwa) {
+            setNotificationSupportMessage('No iPhone, notificações só funcionam depois de adicionar o app à Tela de Início: toque no ícone de compartilhar (□↑) no navegador e escolha "Adicionar à Tela de Início". Depois abra o app por esse ícone, não pelo navegador.');
+          } else {
+            setNotificationSupportMessage('Este navegador não oferece suporte para notificações push.');
+          }
           setOrderNotificationsEnabled(false);
           setUser(prev => ({ ...prev, order_status_notifications: false }));
           return;
@@ -252,10 +269,20 @@ export default function Account() {
           }
         }
 
-        const registration = await navigator.serviceWorker.register('/sw.js').catch(() => null);
-        const readyRegistration = registration || await navigator.serviceWorker.ready.catch(() => null);
+        let readyRegistration;
+        try {
+          const registration = await navigator.serviceWorker.register('/sw.js');
+          readyRegistration = await withTimeout(navigator.serviceWorker.ready, 'ativação do service worker');
+        } catch (swError) {
+          console.error('[NOTIF] Falha ao registrar/ativar o service worker:', swError);
+          setNotificationSupportMessage('Não foi possível preparar as notificações neste aparelho. Tente recarregar a página e tentar de novo.');
+          setOrderNotificationsEnabled(false);
+          setUser(prev => ({ ...prev, order_status_notifications: false }));
+          return;
+        }
+
         if (!readyRegistration || !readyRegistration.pushManager) {
-          setNotificationSupportMessage('Este navegador não conseguiu registrar o serviço de notificações. Em iPhone/Safari isso normalmente exige suporte nativo do sistema.');
+          setNotificationSupportMessage('Este navegador não conseguiu registrar o serviço de notificações.');
           setOrderNotificationsEnabled(false);
           setUser(prev => ({ ...prev, order_status_notifications: false }));
           return;
@@ -272,7 +299,7 @@ export default function Account() {
             userVisibleOnly: true,
             applicationServerKey,
           }).catch((subscribeError) => {
-            console.error('Erro ao criar inscrição de push:', subscribeError);
+            console.error('[NOTIF] Erro ao criar inscrição de push:', subscribeError);
             throw new Error('Não foi possível ativar as notificações neste aparelho.');
           });
         }

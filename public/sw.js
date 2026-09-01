@@ -1,12 +1,12 @@
 self.addEventListener('push', event => {
   const data = event.data?.json() || {};
-  const title = data.title || 'Nova entrega';
+  const title = data.title || 'Maki Food';
   const options = {
-    body: data.body || 'Você recebeu uma nova entrega.',
+    body: data.body || 'Você tem uma atualização no seu pedido.',
     icon: data.icon || '/favicon.png',
     badge: data.badge || '/favicon.png',
-    data: { url: data.url || '/admin/entregas' },
-    tag: data.tag || 'delivery-assignment',
+    data: { url: data.url || '/' },
+    tag: data.tag || 'maki-food-notification',
     renotify: true,
     silent: false,
     vibrate: [300, 100, 300, 100, 600],
@@ -17,7 +17,7 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const url = event.notification.data?.url || '/admin/entregas';
+  const url = event.notification.data?.url || '/';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
