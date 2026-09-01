@@ -5,6 +5,7 @@ import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-route
 import { useEffect, useRef } from 'react';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { SettingsProvider, useSettings } from '@/context/SettingsContext';
 import ScrollToTop from './components/ScrollToTop';
 import { base44 } from '@/api/supabaseClient';
 import { toast } from '@/components/ui/use-toast';
@@ -38,7 +39,6 @@ import Lists from '@/pages/client/Lists';
 import Account from '@/pages/client/Account';
 import CatalogView from '@/pages/client/CatalogView';
 import { CartProvider } from '@/context/CartContext';
-import { SettingsProvider } from '@/context/SettingsContext';
 
 function GlobalOrderRealtimeAlerts() {
   const { user } = useAuth();
@@ -92,15 +92,28 @@ function GlobalOrderRealtimeAlerts() {
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authChecked } = useAuth();
+  const { settings } = useSettings();
   const location = useLocation();
 
   // Só mostra a tela de carregamento na primeiríssima checagem — nunca mais
   // depois disso (evita reiniciar páginas, como no fluxo de recuperação de
   // senha, toda vez que o app rechecar a sessão em segundo plano)
   if (!authChecked && (isLoadingPublicSettings || isLoadingAuth)) {
+    // Sem timer fixo: essa tela já fica visível exatamente pelo tempo real
+    // da checagem de sessão, nem mais nem menos. Se a logo do AppSettings
+    // ainda não chegou (rede lenta, provider separado do de auth), cai de
+    // volta pro spinner simples em vez de mostrar espaço em branco/quebrado.
     return (
-      <div className="fixed inset-0 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
+      <div className="fixed inset-0 flex items-center justify-center bg-white">
+        {settings?.logo_url ? (
+          <img
+            src={settings.logo_url}
+            alt={settings.app_name || 'Carregando'}
+            className="h-16 w-auto max-w-[60vw] object-contain animate-pulse"
+          />
+        ) : (
+          <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
+        )}
       </div>
     );
   }
