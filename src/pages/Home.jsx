@@ -1,29 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
-import { base44 } from '@/api/supabaseClient';
+import React from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '@/lib/AuthContext';
 
+// Antes esta tela fazia sua PRÓPRIA chamada base44.auth.me() (redundante:
+// o AuthProvider, que já envolve toda a árvore, já tinha acabado de checar
+// a sessão para liberar a rota) e mostrava um segundo spinner enquanto
+// esperava essa segunda checagem terminar — daí o "bolinha, logo, bolinha
+// de novo" que aparecia na entrada do app. Agora só lê o resultado que já
+// existe em contexto e redireciona na hora, sem nova chamada de rede e
+// sem tela de carregamento própria.
 export default function Home() {
-  const [redirect, setRedirect] = useState(null);
-  const location = useLocation();
+  const { user } = useAuth();
 
-  useEffect(() => {
-    base44.auth.me()
-      .then(user => {
-        if (user.role === 'admin' || user.role === 'seller') {
-          setRedirect('/admin');
-        } else if (user.role === 'deliverer') {
-          setRedirect('/admin/entregas');
-        } else {
-          setRedirect('/loja');
-        }
-      })
-      .catch(() => setRedirect('/loja'));
-  }, []);
-
-  if (redirect) return <Navigate to={redirect} replace />;
-  return (
-    <div className="fixed inset-0 flex items-center justify-center bg-slate-50">
-      <div className="w-8 h-8 border-4 border-slate-200 border-t-emerald-600 rounded-full animate-spin" />
-    </div>
-  );
+  if (!user) return <Navigate to="/loja" replace />;
+  if (user.role === 'admin' || user.role === 'seller') return <Navigate to="/admin" replace />;
+  if (user.role === 'deliverer') return <Navigate to="/admin/entregas" replace />;
+  return <Navigate to="/loja" replace />;
 }
