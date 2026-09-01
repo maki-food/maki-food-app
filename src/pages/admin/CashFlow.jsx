@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import DateInput from '@/components/ui/date-input';
 import { ArrowDownCircle, ArrowUpCircle, Banknote, Calendar, Eye, Pencil, Plus, Search, Trash2, Wallet } from 'lucide-react';
+import { getPeriodRange } from '@/lib/dateFilters';
 import { toast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
@@ -18,6 +19,7 @@ export default function CashFlow() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('today');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
@@ -52,14 +54,35 @@ export default function CashFlow() {
     return () => { if (unsub) unsub(); };
   }, []);
 
+  const formatIsoDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const applyDatePreset = (value) => {
+    setDateFilter(value);
+    if (value === 'all') {
+      setDateFrom('');
+      setDateTo('');
+      return;
+    }
+    const { start, end } = getPeriodRange(value);
+    setDateFrom(start ? formatIsoDate(start) : '');
+    setDateTo(end ? formatIsoDate(end) : '');
+  };
+
   const filtered = useMemo(() => transactions.filter(item => {
     const date = String(item.occurred_at || item.created_date || '').slice(0, 10);
-    if (dateFrom && date < dateFrom) return false;
-    if (dateTo && date > dateTo) return false;
+    const activeFrom = dateFrom || (dateFilter !== 'all' && dateFilter !== 'custom' ? formatIsoDate(getPeriodRange(dateFilter).start) : '');
+    const activeTo = dateTo || (dateFilter !== 'all' && dateFilter !== 'custom' ? formatIsoDate(getPeriodRange(dateFilter).end) : '');
+    if (activeFrom && date < activeFrom) return false;
+    if (activeTo && date > activeTo) return false;
     if (filter !== 'all' && item.type !== filter) return false;
     if (search && !`${item.description} ${item.category} ${item.payment_method}`.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }), [transactions, dateFrom, dateTo, filter, search]);
+  }), [transactions, dateFrom, dateTo, filter, search, dateFilter]);
 
   const summary = useMemo(() => filtered.reduce((result, item) => {
     const amount = Number(item.amount || 0);
@@ -229,9 +252,32 @@ export default function CashFlow() {
         <div className="flex flex-wrap items-end gap-3">
           <div className="relative flex-1 min-w-[220px]"><Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" /><Input value={search} onChange={e => setSearch(e.target.value)} className="pl-9" placeholder="Buscar lançamento..." /></div>
           <div><Label className="text-xs">Tipo</Label><select value={filter} onChange={e => setFilter(e.target.value)} className="mt-1 h-10 rounded-md border border-slate-200 bg-white px-3 text-sm"><option value="all">Todos</option><option value="entry">Entradas</option><option value="expense">Saídas</option></select></div>
-          <div><Label className="text-xs">De</Label><DateInput value={dateFrom} onChange={setDateFrom} /></div>
-          <div><Label className="text-xs">Até</Label><DateInput value={dateTo} onChange={setDateTo} /></div>
-          <Calendar className="mb-2 hidden sm:block w-4 h-4 text-slate-400" />
+        </div>
+
+        <div className="mt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { value: 'all', label: 'Tudo' },
+              { value: 'today', label: 'Hoje' },
+              { value: 'week', label: 'Semana' },
+              { value: 'month', label: 'Mês' },
+            ].map(option => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => applyDatePreset(option.value)}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${dateFilter === option.value ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <div><Label className="text-xs">De</Label><DateInput value={dateFrom} onChange={value => { setDateFilter('custom'); setDateFrom(value); }} /></div>
+            <div><Label className="text-xs">Até</Label><DateInput value={dateTo} onChange={value => { setDateFilter('custom'); setDateTo(value); }} /></div>
+            <Calendar className="mb-2 hidden sm:block w-4 h-4 text-slate-400" />
+          </div>
         </div>
       </div>
 
