@@ -296,7 +296,7 @@ export default function OrderAccordion({ order, onUpdate, onDelete }) {
       return;
     }
 
-    if (['Em Separação', 'Saiu para Entrega', 'Finalizado'].includes(status) && order.created_by_id) {
+    if (['Em Separação', 'Pronto para Retirada', 'Saiu para Entrega', 'Finalizado'].includes(status) && order.created_by_id) {
       try {
         await base44.notifications.sendOrderStatusNotification({
           userId: order.created_by_id,

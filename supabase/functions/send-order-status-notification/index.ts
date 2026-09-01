@@ -8,6 +8,7 @@ const corsHeaders = {
 
 const MESSAGE_MAP = {
   'Em Separação': 'Seu pedido está em separação.',
+  'Pronto para Retirada': 'Seu pedido está pronto para retirada!',
   'Saiu para Entrega': 'Seu pedido saiu para entrega.',
   'Finalizado': 'Seu pedido foi entregue com sucesso.',
 };
