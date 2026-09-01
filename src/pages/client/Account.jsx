@@ -1081,6 +1081,16 @@ export default function Account() {
         </div>
       </button>
 
+      <button onClick={openWhatsApp} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <HelpCircle className="w-4 h-4 text-slate-500" />
+            <span className="text-sm font-medium text-slate-700">Ajuda</span>
+          </div>
+          <ChevronRight className="w-4 h-4 text-slate-400" />
+        </div>
+      </button>
+
       <button onClick={handleLogout} className="w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-left shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
