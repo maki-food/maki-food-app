@@ -29,7 +29,6 @@ export default function BannerCarousel({ banners = [], interval = 5 }) {
           className={`absolute inset-0 transition-opacity duration-700 ${i === current ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         >
           <img src={url} alt={`Banner ${i + 1}`} className="w-full h-full object-cover" loading={i === 0 ? 'eager' : 'lazy'} decoding="async" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
         </div>
       ))}
 
