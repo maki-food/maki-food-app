@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { User, ClipboardList, UserCog, LogOut, HelpCircle, ShieldCheck, ChevronRight, MapPin, Loader2, Plus, Package, Edit } from 'lucide-react';
+import { User, ClipboardList, UserCog, LogOut, HelpCircle, ShieldCheck, ChevronRight, MapPin, Loader2, Plus, Package, Edit, Bell } from 'lucide-react';
 import { formatBRL, formatDate, getOrderDisplayItems, getOrderItemQuantityLabel, getOrderItemSubtotal } from '@/lib/format';
 import { maskCNPJ, maskPhone } from '@/lib/masks';
 import StatusBadge from '@/components/StatusBadge';
@@ -191,7 +191,7 @@ export default function Account() {
 
   useEffect(() => {
     const section = searchParams.get('section');
-    if (section === 'personal' || section === 'address' || section === 'privacy') {
+    if (section === 'personal' || section === 'address' || section === 'privacy' || section === 'notifications') {
       setSelectedSection(section);
     } else {
       setSelectedSection('orders');
@@ -532,27 +532,6 @@ export default function Account() {
             <Input value={form.personal_phone} onChange={e => setForm({ ...form, personal_phone: maskPhone(e.target.value) })} className="mt-1" placeholder="(11) 99999-9999" />
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="font-medium text-slate-900">Notificações do status do pedido</p>
-                <p className="text-xs text-slate-500">Receba alertas quando o seu pedido mudar de etapa.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleOrderNotificationsToggle(!orderNotificationsEnabled)}
-                disabled={isTogglingNotifications}
-                className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${orderNotificationsEnabled ? 'bg-emerald-600' : 'bg-slate-300'} ${isTogglingNotifications ? 'opacity-60 cursor-not-allowed' : ''}`}
-                aria-label="Alternar notificações"
-              >
-                <span className={`inline-block h-5 w-5 rounded-full bg-white transition ${orderNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-              </button>
-            </div>
-            {notificationSupportMessage && (
-              <p className="mt-3 text-xs text-amber-700">{notificationSupportMessage}</p>
-            )}
-          </div>
-
           <div className="border-t border-slate-100 pt-4 space-y-4">
             <div>
               <h3 className="font-semibold text-slate-900">Meus restaurantes cadastrados</h3>
@@ -580,6 +559,59 @@ export default function Account() {
             </Button>
           </div>
         </form>
+      );
+    }
+
+    if (selectedSection === 'notifications') {
+      const isIosSafariFamily = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      return (
+        <div className="space-y-5">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="font-medium text-slate-900">Notificações do status do pedido</p>
+                <p className="text-xs text-slate-500">Receba um alerta quando seu pedido mudar de etapa: em separação, saiu para entrega e entregue.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOrderNotificationsToggle(!orderNotificationsEnabled)}
+                disabled={isTogglingNotifications}
+                className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition ${orderNotificationsEnabled ? 'bg-emerald-600' : 'bg-slate-300'} ${isTogglingNotifications ? 'opacity-60 cursor-not-allowed' : ''}`}
+                aria-label="Alternar notificações"
+              >
+                <span className={`inline-block h-5 w-5 rounded-full bg-white transition ${orderNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            {notificationSupportMessage && (
+              <p className="mt-3 text-xs text-amber-700">{notificationSupportMessage}</p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+            <p className="text-sm font-semibold text-slate-900">Como ativar</p>
+
+            {isIosSafariFamily ? (
+              <div className="space-y-2 text-sm text-slate-600">
+                <p className="font-medium text-slate-800">No iPhone, o app precisa estar instalado na Tela de Início — não funciona pelo Safari normal.</p>
+                <ol className="list-decimal list-inside space-y-1">
+                  <li>Abra este site pelo Safari (se ainda não estiver).</li>
+                  <li>Toque no ícone de compartilhar (o quadrado com uma seta para cima), na barra do navegador.</li>
+                  <li>Escolha "Adicionar à Tela de Início".</li>
+                  <li>Feche o Safari e abra o app pelo ícone que apareceu na sua tela — não pelo navegador.</li>
+                  <li>Volte aqui em Perfil → Notificações e toque no botão acima para ativar.</li>
+                </ol>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-600">
+                Neste aparelho é só tocar no botão acima e permitir as notificações quando o navegador perguntar.
+              </p>
+            )}
+
+            <p className="text-xs text-slate-500 border-t border-slate-100 pt-3">
+              Ativar (ou desativar) aqui vale só para este aparelho. Se você também usa o Maki Food no computador ou em outro celular, repita esse passo lá para receber nos dois.
+            </p>
+          </div>
+        </div>
       );
     }
 
@@ -950,6 +982,7 @@ export default function Account() {
     { id: 'orders', label: 'Meus pedidos', icon: ClipboardList },
     { id: 'personal', label: 'Dados pessoais', icon: UserCog },
     { id: 'address', label: 'Endereços', icon: MapPin },
+    { id: 'notifications', label: 'Notificações', icon: Bell },
   ];
 
   if (user === undefined) {
@@ -1060,6 +1093,14 @@ export default function Account() {
     </div>
   );
 
+  const sectionHeaders = {
+    orders: { title: 'Meus pedidos', subtitle: 'Aqui você pode ver uma lista dos pedidos que fez e o status de cada compra.' },
+    personal: { title: 'Dados pessoais', subtitle: 'Atualize seu nome e telefone de contato.' },
+    address: { title: 'Endereços', subtitle: 'Atualize os dados de endereço e o nome do restaurante.' },
+    notifications: { title: 'Notificações', subtitle: 'Ative para ser avisado quando o status do seu pedido mudar.' },
+    privacy: { title: 'Privacidade e dados', subtitle: 'Informações sobre como seus dados são usados e protegidos.' },
+  };
+
   const renderAccountDetail = () => (
     <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
       <div className="flex items-center gap-3 mb-4">
@@ -1075,22 +1116,10 @@ export default function Account() {
         )}
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">
-            {selectedSection === 'orders'
-              ? 'Meus pedidos'
-              : selectedSection === 'personal'
-                ? 'Dados pessoais'
-                : selectedSection === 'address'
-                  ? 'Endereços'
-                  : 'Privacidade e dados'}
+            {sectionHeaders[selectedSection]?.title || sectionHeaders.orders.title}
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            {selectedSection === 'orders'
-              ? 'Aqui você pode ver uma lista dos pedidos que fez e o status de cada compra.'
-              : selectedSection === 'personal'
-                ? 'Atualize seu nome e telefone de contato.'
-                : selectedSection === 'address'
-                  ? 'Atualize os dados de endereço e o nome do restaurante.'
-                  : 'Informações sobre como seus dados são usados e protegidos.'}
+            {sectionHeaders[selectedSection]?.subtitle || sectionHeaders.orders.subtitle}
           </p>
         </div>
       </div>
@@ -1159,22 +1188,10 @@ export default function Account() {
             {selectedSection === 'orders' && orderCount === 0 ? null : (
               <>
                 <h1 className="text-2xl font-semibold text-slate-900">
-                  {selectedSection === 'orders'
-                    ? 'Meus pedidos'
-                    : selectedSection === 'personal'
-                      ? 'Dados pessoais'
-                      : selectedSection === 'address'
-                        ? 'Endereços'
-                        : 'Privacidade e dados'}
+                  {sectionHeaders[selectedSection]?.title || sectionHeaders.orders.title}
                 </h1>
                 <p className="text-sm text-slate-500 mt-1">
-                  {selectedSection === 'orders'
-                    ? 'Aqui você pode ver uma lista dos pedidos que fez e o status de cada compra.'
-                    : selectedSection === 'personal'
-                      ? 'Atualize seu nome e telefone de contato.'
-                      : selectedSection === 'address'
-                        ? 'Atualize os dados de endereço e o nome do restaurante.'
-                        : 'Informações sobre como seus dados são usados e protegidos.'}
+                  {sectionHeaders[selectedSection]?.subtitle || sectionHeaders.orders.subtitle}
                 </p>
               </>
             )}
