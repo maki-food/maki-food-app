@@ -839,7 +839,7 @@ export default function Account() {
     if (selectedSection === 'privacy') {
       return (
         <div className="space-y-4 text-sm text-slate-600">
-          <p>Seus dados (nome, endereço, telefone e histórico de pedidos) são usados só para processar suas compras e melhorar seu atendimento.</p>
+          <p>Seus dados (nome, endereço, telefone e histórico de pedidos) são usados somente para processar suas compras e termos um melhor atendimento.</p>
           <p>Não vendemos nem compartilhamos suas informações com terceiros fora do necessário para a entrega do seu pedido.</p>
           <p>Para dúvidas ou para pedir a exclusão dos seus dados, entre em contato pelo WhatsApp de atendimento.</p>
         </div>
