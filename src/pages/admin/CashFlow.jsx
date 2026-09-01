@@ -248,13 +248,24 @@ export default function CashFlow() {
         <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => { setShowEntry(false); setEntry(emptyEntry); }}>Cancelar</Button><Button type="submit" disabled={saving} className="bg-emerald-600 hover:bg-emerald-700">Salvar reforço</Button></div>
       </form>}
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="relative flex-1 min-w-[220px]"><Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" /><Input value={search} onChange={e => setSearch(e.target.value)} className="pl-9" placeholder="Buscar lançamento..." /></div>
-          <div><Label className="text-xs">Tipo</Label><select value={filter} onChange={e => setFilter(e.target.value)} className="mt-1 h-10 rounded-md border border-slate-200 bg-white px-3 text-sm"><option value="all">Todos</option><option value="entry">Entradas</option><option value="expense">Saídas</option></select></div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+            <Input value={search} onChange={e => setSearch(e.target.value)} className="h-10 pl-9 text-sm" placeholder="Buscar lançamento..." />
+          </div>
+
+          <div className="w-full lg:w-[150px]">
+            <Label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">Tipo</Label>
+            <select value={filter} onChange={e => setFilter(e.target.value)} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:ring-1 focus:ring-emerald-500">
+              <option value="all">Todos</option>
+              <option value="entry">Entradas</option>
+              <option value="expense">Saídas</option>
+            </select>
+          </div>
         </div>
 
-        <div className="mt-4">
+        <div className="mt-3">
           <div className="flex flex-wrap items-center gap-2">
             {[
               { value: 'all', label: 'Tudo' },
@@ -266,17 +277,25 @@ export default function CashFlow() {
                 key={option.value}
                 type="button"
                 onClick={() => applyDatePreset(option.value)}
-                className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${dateFilter === option.value ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${dateFilter === option.value ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
               >
                 {option.label}
               </button>
             ))}
           </div>
 
-          <div className="mt-4 flex flex-wrap items-end gap-3">
-            <div><Label className="text-xs">De</Label><DateInput value={dateFrom} onChange={value => { setDateFilter('custom'); setDateFrom(value); }} /></div>
-            <div><Label className="text-xs">Até</Label><DateInput value={dateTo} onChange={value => { setDateFilter('custom'); setDateTo(value); }} /></div>
-            <Calendar className="mb-2 hidden sm:block w-4 h-4 text-slate-400" />
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1 min-w-[180px]">
+              <Label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">De</Label>
+              <DateInput value={dateFrom} onChange={value => { setDateFilter('custom'); setDateFrom(value); }} className="h-10" />
+            </div>
+            <div className="flex-1 min-w-[180px]">
+              <Label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">Até</Label>
+              <DateInput value={dateTo} onChange={value => { setDateFilter('custom'); setDateTo(value); }} className="h-10" />
+            </div>
+            <div className="hidden sm:flex h-10 items-center px-2 text-slate-400">
+              <Calendar className="w-4 h-4" />
+            </div>
           </div>
         </div>
       </div>
