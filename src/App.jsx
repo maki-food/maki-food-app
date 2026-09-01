@@ -109,7 +109,7 @@ const AuthenticatedApp = () => {
           <img
             src={settings.logo_url}
             alt={settings.app_name || 'Carregando'}
-            className="h-16 w-auto max-w-[60vw] object-contain animate-pulse"
+            className="h-40 w-auto max-w-[80vw] object-contain animate-pulse"
           />
         ) : (
           <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
