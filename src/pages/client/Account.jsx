@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { base44, supabase } from '@/api/supabaseClient';
 import { useSettings } from '@/context/SettingsContext';
@@ -147,7 +147,10 @@ export default function Account() {
 
     const currentUser = await base44.auth.me().catch(() => null);
     setUser(currentUser);
-    setOrderNotificationsEnabled(Boolean(currentUser?.order_status_notifications));
+    // O estado do toggle vem de syncNotificationSubscription (checagem real
+    // deste aparelho), não mais da flag global do cliente — ver comentário
+    // ao lado da definição de syncNotificationSubscription.
+    if (currentUser) syncNotificationSubscription(currentUser);
     if (!currentUser) {
       setAccountName(null);
       setRestaurant(null);
@@ -216,6 +219,32 @@ export default function Account() {
       window.open(`https://wa.me/${digits}`, '_blank');
     } else {
       alert('Nenhum WhatsApp de atendimento configurado ainda.');
+    }
+  };
+
+  // Mesmo princípio do painel do entregador em Deliveries.jsx, aplicado ao
+  // cliente: o toggle NÃO reflete mais profiles.order_status_notifications
+  // (flag única por CLIENTE, valia pra todos os aparelhos dele). Ele reflete
+  // se ESTE navegador/aparelho específico tem uma inscrição push real. Isso
+  // é o que permite computador e celular terem estados independentes —
+  // desativar em um não apaga nem mente sobre o outro.
+  const didSyncNotificationsRef = useRef(false);
+  const syncNotificationSubscription = async (currentUser) => {
+    if (!currentUser?.id || didSyncNotificationsRef.current) return;
+    if (typeof Notification === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    didSyncNotificationsRef.current = true;
+
+    if (Notification.permission !== 'granted') {
+      setOrderNotificationsEnabled(false);
+      return;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription().catch(() => null);
+      setOrderNotificationsEnabled(Boolean(subscription));
+    } catch (error) {
+      console.warn('[NOTIF] Falha ao sincronizar inscrição de notificações:', error);
     }
   };
 
@@ -319,11 +348,14 @@ export default function Account() {
         const subscription = pushManager ? await pushManager.getSubscription().catch(() => null) : null;
 
         if (subscription) {
+          // Apaga só a inscrição DESTE navegador/aparelho (por endpoint).
+          // Antes era `.eq('user_id', user.id)`, que apagava a inscrição de
+          // TODOS os aparelhos do cliente — desativar no celular derrubava
+          // o computador junto. Mesmo princípio já usado em Deliveries.jsx.
+          const { error } = await supabase.from('push_subscriptions').delete().eq('endpoint', subscription.endpoint);
+          if (error) throw error;
           await subscription.unsubscribe().catch(() => {});
         }
-
-        const { error } = await supabase.from('push_subscriptions').delete().eq('user_id', user.id);
-        if (error) throw error;
       }
 
       await base44.entities.User.update(user.id, { order_status_notifications: nextValue });

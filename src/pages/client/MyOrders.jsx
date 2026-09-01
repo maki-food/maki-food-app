@@ -17,7 +17,13 @@ export default function MyOrders() {
   const userIdRef = React.useRef(null);
 
   const sendOrderStatusNotification = (order, previousStatus) => {
-    if (!user?.order_status_notifications || !order?.id || !('Notification' in window) || Notification.permission !== 'granted') return;
+    // Antes dependia de user.order_status_notifications (flag única do
+    // cliente, valia pra todos os aparelhos). Esse toast é local — só
+    // aparece enquanto esta aba está aberta neste aparelho — então o sinal
+    // certo é a permissão do PRÓPRIO navegador (Notification.permission),
+    // que já é por aparelho por natureza. Mesmo princípio da correção do
+    // push em Account.jsx: cada aparelho decide por si.
+    if (!order?.id || !('Notification' in window) || Notification.permission !== 'granted') return;
     if (!previousStatus || previousStatus === order.status) return;
 
     const statusMessages = {

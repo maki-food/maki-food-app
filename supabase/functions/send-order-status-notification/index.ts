@@ -37,24 +37,13 @@ Deno.serve(async request => {
 
     if (!userId || !status) throw new Error('Dados da notificação incompletos');
 
-    const { data: profile, error: profileError } = await adminClient
-      .from('profiles')
-      .select('order_status_notifications')
-      .eq('id', userId)
-      .single();
-
-    if (profileError || !profile) {
-      return new Response(JSON.stringify({ sent: 0, reason: 'perfil não encontrado' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (!profile.order_status_notifications) {
-      return new Response(JSON.stringify({ sent: 0, reason: 'usuário não optou por receber' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
+    // Não checamos mais profiles.order_status_notifications aqui. Essa flag
+    // é única por CLIENTE, não por aparelho — usá-la como filtro fazia
+    // desativar no computador cortar também o celular (e vice-versa).
+    // A fonte da verdade agora é push_subscriptions: cada endpoint (cada
+    // navegador/aparelho) só existe ali se aquele aparelho específico está
+    // inscrito. Sem inscrição = sem envio, naturalmente, sem precisar de
+    // uma flag global.
     const { data: subscriptions, error: subscriptionError } = await adminClient
       .from('push_subscriptions')
       .select('id, subscription')
