@@ -7,6 +7,31 @@ export const useSettings = () => useContext(SettingsContext);
 
 const DEFAULTS = { app_name: 'Maki Food - Tudo Para Seu Restaurante', logo_url: '', hero_image_url: '', hero_image_mobile_url: '', banners: [], desktop_banners: [], mobile_banners: [], banner_interval: 5, sidebar_bg: '#0f172a', primary_color: '#059669', page_bg: '#f8fafc', topbar_bg: '#ffffff', category_bar_bg: '#f8fafc', admin_text_color: '#ffffff', store_text_color: '#475569', cart_card_bg: '#059669', cart_card_text: '#ffffff', cart_button_bg: '#ffffff', cart_button_text: '#047857', invoice_logo_url: '', invoice_header_text: 'Comprovante de Pedido', invoice_footer_text: '', expiration_threshold_days: 7, payment_methods: ['Pix', 'Dinheiro'], payment_fees: {}, shipping_fee: 20, free_shipping_threshold: 200, pickup_address: '' };
 
+// Cache local das configurações (principalmente a logo) para a tela de
+// carregamento inicial (App.jsx) não depender de esperar a consulta ao
+// Supabase antes de ter algo pra mostrar. Da segunda visita em diante, o
+// valor sai do localStorage na hora — só a primeiríssima visita no
+// navegador ainda cai no fallback (sem cache pra ler ainda).
+const SETTINGS_CACHE_KEY = 'makifood_app_settings_cache_v1';
+
+const getCachedSettings = () => {
+  try {
+    const raw = localStorage.getItem(SETTINGS_CACHE_KEY);
+    return raw ? normalizeAppSettings(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+};
+
+const cacheSettings = (value) => {
+  try {
+    localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(value));
+  } catch {
+    // localStorage indisponível (modo privado, cota cheia etc.) — sem
+    // problema, só perde o cache, a busca normal ao Supabase continua.
+  }
+};
+
 const normalizeAppSettings = (raw) => {
   if (!raw) return DEFAULTS;
   const banners = raw.banners || [];
@@ -24,15 +49,17 @@ const normalizeAppSettings = (raw) => {
 };
 
 export const SettingsProvider = ({ children }) => {
-  const [settings, setSettings] = useState(null);
+  const [settings, setSettings] = useState(() => getCachedSettings());
 
   const loadSettings = async () => {
     try {
       const list = await base44.entities.AppSettings.list();
-      setSettings(list.length > 0 ? normalizeAppSettings(list[0]) : DEFAULTS);
+      const next = list.length > 0 ? normalizeAppSettings(list[0]) : DEFAULTS;
+      setSettings(next);
+      cacheSettings(next);
     } catch (error) {
       console.error('Erro ao carregar AppSettings:', error);
-      setSettings(DEFAULTS);
+      setSettings((prev) => prev || DEFAULTS);
     }
   };
 
