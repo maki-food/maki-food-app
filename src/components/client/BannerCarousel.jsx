@@ -22,7 +22,7 @@ export default function BannerCarousel({ banners = [], interval = 5 }) {
   };
 
   return (
-    <div className="relative rounded-2xl overflow-hidden mb-6 aspect-[16/9] sm:aspect-[3/1] group">
+    <div className="relative rounded-2xl overflow-hidden mb-6 aspect-[500/375] sm:aspect-[3/1] group">
       {banners.map((url, i) => (
         <div
           key={i}

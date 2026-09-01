@@ -117,7 +117,7 @@ export default function ClientProducts() {
       {hasBanners ? (
         <BannerCarousel banners={banners} interval={settings?.banner_interval || 5} />
       ) : (settings?.hero_image_mobile_url || settings?.hero_image_url) ? (
-        <div className="relative rounded-2xl overflow-hidden mb-6 aspect-[16/9] sm:aspect-[3/1]">
+        <div className="relative rounded-2xl overflow-hidden mb-6 aspect-[500/375] sm:aspect-[3/1]">
           <picture>
             {settings.hero_image_mobile_url ? <source media="(max-width: 639px)" srcSet={settings.hero_image_mobile_url} /> : null}
             {settings.hero_image_url ? <source media="(min-width: 640px)" srcSet={settings.hero_image_url} /> : null}
