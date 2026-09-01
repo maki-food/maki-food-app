@@ -272,7 +272,7 @@ export default function Account() {
 
         if (typeof Notification === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
           if (isIosSafariFamily && !isStandalonePwa) {
-            setNotificationSupportMessage('No iPhone, notificações só funcionam depois de adicionar o app à Tela de Início: toque no ícone de compartilhar (□↑) no navegador e escolha "Adicionar à Tela de Início". Depois abra o app por esse ícone, não pelo navegador.');
+            setNotificationSupportMessage('⚠️ Instalação necessária. Siga o passo a passo abaixo para ativar. ⬇️');
           } else {
             setNotificationSupportMessage('Este navegador não oferece suporte para notificações push.');
           }
