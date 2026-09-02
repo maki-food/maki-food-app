@@ -263,10 +263,8 @@ export default function CashFlow() {
               <option value="expense">Saídas</option>
             </select>
           </div>
-        </div>
 
-        <div className="mt-3">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 lg:pb-0.5">
             {[
               { value: 'all', label: 'Tudo' },
               { value: 'today', label: 'Hoje' },
@@ -283,19 +281,19 @@ export default function CashFlow() {
               </button>
             ))}
           </div>
+        </div>
 
-          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1 min-w-[180px]">
-              <Label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">De</Label>
-              <DateInput value={dateFrom} onChange={value => { setDateFilter('custom'); setDateFrom(value); }} className="h-10" />
-            </div>
-            <div className="flex-1 min-w-[180px]">
-              <Label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">Até</Label>
-              <DateInput value={dateTo} onChange={value => { setDateFilter('custom'); setDateTo(value); }} className="h-10" />
-            </div>
-            <div className="hidden sm:flex h-10 items-center px-2 text-slate-400">
-              <Calendar className="w-4 h-4" />
-            </div>
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex-1 min-w-[180px]">
+            <Label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">De</Label>
+            <DateInput value={dateFrom} onChange={value => { setDateFilter('custom'); setDateFrom(value); }} className="h-10" />
+          </div>
+          <div className="flex-1 min-w-[180px]">
+            <Label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-500">Até</Label>
+            <DateInput value={dateTo} onChange={value => { setDateFilter('custom'); setDateTo(value); }} className="h-10" />
+          </div>
+          <div className="hidden sm:flex h-10 items-center px-2 text-slate-400">
+            <Calendar className="w-4 h-4" />
           </div>
         </div>
       </div>
