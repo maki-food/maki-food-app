@@ -8,6 +8,7 @@ import BackToTop from '@/components/BackToTop';
 import BottomNav from '@/components/client/BottomNav';
 import FloatingCartBar from '@/components/client/FloatingCartBar';
 import AccountPromptModal from '@/components/client/AccountPromptModal';
+import PwaOnboardingPrompts from '@/components/client/PwaOnboardingPrompts';
 import DesktopAccountMenu from '@/components/client/DesktopAccountMenu';
 import { formatBRL } from '@/lib/format';
 
@@ -105,6 +106,7 @@ export default function ClientLayout() {
         <FloatingCartBar />
       </div>
       <AccountPromptModal />
+      <PwaOnboardingPrompts />
       <div className="lg:hidden">
         <BottomNav />
       </div>
