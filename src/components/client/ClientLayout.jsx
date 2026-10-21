@@ -15,7 +15,7 @@ import { formatBRL } from '@/lib/format';
 export default function ClientLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { count, total } = useCart();
+  const { items, count, total } = useCart();
   const { settings } = useSettings();
   const [search, setSearch] = useState('');
   const isCartRoute = location.pathname === '/loja/carrinho';
@@ -74,8 +74,8 @@ export default function ClientLayout() {
               style={{ backgroundColor: (settings?.primary_color || '#059669') + '1a', color: settings?.primary_color || '#059669' }}
             >
               <ShoppingCart className="w-5 h-5" />
-              <span className="lg:hidden absolute -top-1 -right-1 bg-emerald-600 text-white text-xs font-bold min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center" style={{ display: count > 0 ? 'flex' : 'none' }}>
-                {count}
+              <span className="lg:hidden absolute -top-1 -right-1 bg-emerald-600 text-white text-xs font-bold min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center" style={{ display: items.length > 0 ? 'flex' : 'none' }}>
+                {items.length}
               </span>
               {count > 0 && <span className="hidden lg:inline">{count} · {formatBRL(total)}</span>}
             </Link>
