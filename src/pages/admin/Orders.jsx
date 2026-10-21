@@ -16,7 +16,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { ClipboardList, Search, Filter, X } from 'lucide-react';
+import { ClipboardList, Search, Filter, X, Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import StoreSaleDialog from '@/components/admin/StoreSaleDialog';
 import { getPeriodRange } from '@/lib/dateFilters';
 
 const filters = [
@@ -48,6 +50,7 @@ export default function Orders() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [dateFilter, setDateFilter] = useState('today');
 
+  const [storeSaleOpen, setStoreSaleOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -189,9 +192,14 @@ export default function Orders() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Pedidos</h1>
-        <p className="text-sm text-slate-500">{orders.length} pedidos no total • atualização em tempo real</p>
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Pedidos</h1>
+          <p className="text-sm text-slate-500">{orders.length} pedidos no total • atualização em tempo real</p>
+        </div>
+        <Button onClick={() => setStoreSaleOpen(true)} className="shrink-0 bg-emerald-600 hover:bg-emerald-700">
+          <Plus className="w-4 h-4 mr-1" /> Nova venda loja
+        </Button>
       </div>
 
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
@@ -283,6 +291,8 @@ export default function Orders() {
           ))}
         </div>
       )}
+
+      <StoreSaleDialog open={storeSaleOpen} onClose={() => setStoreSaleOpen(false)} onCreated={load} />
 
       <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>
